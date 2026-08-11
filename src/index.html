@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus DevTools Workbench — Instant Utility</title>
+  <meta name="description" content="Nexus DevTools Workbench: High-efficiency developer utilities with zero-click IP info, live reactive converters, and network diagnostics." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/main.css" />
+</head>
+<body>
+  <!-- Aurora Background -->
+  <div class="aurora-bg">
+    <div class="aurora-blob b1"></div>
+    <div class="aurora-blob b2"></div>
+  </div>
+  <div class="mouse-glow" id="mouseGlow"></div>
+
+  <div id="app">
+    <!-- Top Header Bar with Zero-Click IP Ticker -->
+    <header class="header-bar">
+      <div class="header-container">
+        <div class="logo-wrap">
+          <span class="logo-text">NEXUS</span>
+        </div>
+
+        <!-- Zero-Click IP Status Bar -->
+        <div class="ip-ticker" id="ipTicker" title="Click to copy IP">
+          <div class="ip-ticker-item">
+            <span>🌐</span>
+            <span class="ip-ticker-val" id="tickerIp" data-i18n="status_fetching_ip">Detecting IP...</span>
+            <span class="ip-ticker-copy" id="tickerCopy">📋</span>
+          </div>
+          <span style="opacity:0.3;">|</span>
+          <div class="ip-ticker-item">
+            <span id="tickerGeo">...</span>
+          </div>
+          <span style="opacity:0.3;">|</span>
+          <div id="webrtcBadge" class="webrtc-badge">WebRTC: ...</div>
+        </div>
+
+        <!-- Header Actions -->
+        <div class="header-actions">
+          <div class="search-trigger" id="searchTrigger">
+            <span>🔍</span>
+            <span data-i18n-placeholder="searchPlaceholder">Search (⌘K)</span>
+          </div>
+          <button class="theme-toggle" id="themeToggle" title="Toggle Theme">☀️ Light</button>
+          <button class="sfx-toggle" id="sfxToggle" title="Sound FX">🔊</button>
+          <div class="lang-select-wrap">
+            <span>🌐</span>
+            <select id="langSelect" class="lang-select">
+              <option value="zh-CN">简体中文</option>
+              <option value="zh-TW">繁體中文</option>
+              <option value="ja-JP">日本語</option>
+              <option value="en-US">English</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workbench Container -->
+    <div class="workbench-container">
+      <!-- Sidebar Nav -->
+      <aside class="sidebar">
+        <div class="nav-section">
+          <div class="nav-section-title" data-i18n="cat_dev">常用工具</div>
+          <div class="nav-group">
+            <div class="nav-item active" data-id="json">
+              <span class="nav-item-icon">{ }</span>
+              <span data-i18n="json_title">JSON 工坊</span>
+            </div>
+            <div class="nav-item" data-id="codec">
+              <span class="nav-item-icon">🔐</span>
+              <span data-i18n="codec_title">编解码/哈希</span>
+            </div>
+            <div class="nav-item" data-id="time">
+              <span class="nav-item-icon">⏱</span>
+              <span data-i18n="time_title">时间戳转换</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title" data-i18n="cat_network">网络诊断</div>
+          <div class="nav-group">
+            <div class="nav-item" data-id="ip">
+              <span class="nav-item-icon">📡</span>
+              <span data-i18n="ip_title">IP 详细查询</span>
+            </div>
+            <div class="nav-item" data-id="ping">
+              <span class="nav-item-icon">⚡</span>
+              <span data-i18n="ping_title">Ping 测速</span>
+            </div>
+            <div class="nav-item" data-id="dns">
+              <span class="nav-item-icon">🔍</span>
+              <span data-i18n="dns_title">DNS 查询</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Live Stage -->
+      <main class="main-stage">
+        <div class="stage-header">
+          <div class="stage-title-wrap">
+            <span id="stageIcon" style="font-size:1.5rem;">{ }</span>
+            <div>
+              <h2 id="stageTitle">JSON 工坊</h2>
+              <p class="stage-desc" id="stageDesc">实时格式化 · 压缩 · 校验</p>
+            </div>
+          </div>
+          <div class="stage-actions" id="stageActions"></div>
+        </div>
+
+        <!-- Dynamic Live Editor Stage -->
+        <div class="stage-content" id="stageContent"></div>
+      </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p data-i18n="footerText">Nexus DevTools · Privacy-First · Deployed on Vercel</p>
+    </footer>
+  </div>
+
+  <!-- Cmd+K Spotlight Overlay -->
+  <div class="cmdk-overlay" id="cmdkOverlay">
+    <div class="cmdk-box">
+      <div class="cmdk-input-wrap">
+        <span>🔍</span>
+        <input type="text" id="cmdkInput" placeholder="Search tools..." autocomplete="off" />
+        <span style="color:var(--text-dim);font-size:0.75rem;">ESC</span>
+      </div>
+      <div class="cmdk-results" id="cmdkResults"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

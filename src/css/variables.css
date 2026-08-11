@@ -1,0 +1,71 @@
+:root {
+  /* ================= DARK THEME (DEFAULT) ================= */
+  --bg-deep: #0b0f19;
+  --bg-surface: #131b2e;
+  --header-bg: rgba(11, 15, 25, 0.85);
+  --header-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-bg-hover: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --aurora-purple: #a78bfa;
+  --aurora-cyan: #67e8f9;
+  --aurora-emerald: #34d399;
+  --aurora-rose: #fb7185;
+  --aurora-amber: #fbbf24;
+
+  --text-primary: #f8fafc;
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-dim: rgba(255, 255, 255, 0.35);
+
+  --editor-input-bg: rgba(0, 0, 0, 0.45);
+  --editor-output-bg: #090d16;
+  --editor-output-color: #67e8f9;
+  --stage-bg: rgba(19, 27, 46, 0.85);
+  --stage-border: rgba(167, 139, 250, 0.2);
+  --stage-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+
+  --nav-active-bg: rgba(167, 139, 250, 0.18);
+  --nav-active-color: #a78bfa;
+  --nav-active-border: rgba(167, 139, 250, 0.35);
+
+  /* Typography */
+  --font-display: 'Syne', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+
+  --radius-xl: 20px;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+}
+
+[data-theme="light"] {
+  /* ================= LIGHT THEME (HIGH CRAFT STUDIO) ================= */
+  --bg-deep: #f8fafc;
+  --bg-surface: #ffffff;
+  --header-bg: rgba(255, 255, 255, 0.92);
+  --header-border: rgba(226, 232, 240, 0.8);
+  --glass-bg: #f1f5f9;
+  --glass-bg-hover: #e2e8f0;
+  --glass-border: #cbd5e1;
+
+  --aurora-purple: #6366f1;
+  --aurora-cyan: #0284c7;
+  --aurora-emerald: #059669;
+  --aurora-rose: #e11d48;
+  --aurora-amber: #d97706;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-dim: #94a3b8;
+
+  --editor-input-bg: #f8fafc;
+  --editor-output-bg: #0f172a;
+  --editor-output-color: #38bdf8;
+  --stage-bg: #ffffff;
+  --stage-border: #e2e8f0;
+  --stage-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.06), 0 20px 40px -10px rgba(99, 102, 241, 0.05);
+
+  --nav-active-bg: #6366f1;
+  --nav-active-color: #ffffff;
+  --nav-active-border: #4f46e5;
+}
