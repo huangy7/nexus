@@ -406,6 +406,69 @@ body {
 }
 .stage-output-box.error { color: var(--aurora-rose); }
 
+/* ======== Rich IP Telemetry Dashboard ======== */
+.ip-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  width: 100%;
+}
+
+.ip-dash-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ip-dash-card:hover {
+  border-color: var(--aurora-purple);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08);
+}
+
+.ip-dash-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+}
+.ip-dash-header h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.ip-dash-icon { font-size: 1.2rem; }
+
+.ip-dash-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.83rem;
+  font-family: var(--font-mono);
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--glass-border);
+}
+.ip-dash-row:last-child { border: none; }
+
+.ip-dash-label { color: var(--text-secondary); font-weight: 500; }
+.ip-dash-val { color: var(--text-primary); font-weight: 600; text-align: right; }
+.ip-dash-val.highlight { color: var(--aurora-cyan); font-size: 1.05rem; font-weight: 700; }
+
+.ip-tag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.ip-tag.green { background: rgba(5, 150, 105, 0.12); color: var(--aurora-emerald); border: 1px solid rgba(5, 150, 105, 0.3); }
+.ip-tag.red { background: rgba(225, 29, 72, 0.12); color: var(--aurora-rose); border: 1px solid rgba(225, 29, 72, 0.3); }
+.ip-tag.amber { background: rgba(217, 119, 6, 0.12); color: var(--aurora-amber); border: 1px solid rgba(217, 119, 6, 0.3); }
+
 /* ======== Toast Notifications ======== */
 .toast-container {
   position: fixed;

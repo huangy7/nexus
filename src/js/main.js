@@ -346,32 +346,160 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="btn-tool-action btn-tool-primary" id="btnIpCopy">${i18n.t('btn_copy')}</button>
       `;
       stageContent.innerHTML = `
-        <div class="editor-pane">
-          <div class="pane-label"><span>DETAILED NETWORK IDENTITY</span></div>
-          <div class="stage-output-box" id="ipOutput" style="min-height:340px;">Fetching IP details...</div>
+        <div id="ipDashboard" style="width:100%;">
+          <p style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-dim);">Loading IP telemetry & security audit...</p>
         </div>
       `;
-      const output = document.getElementById('ipOutput');
+
       const loadDetailedIp = async () => {
         const data = cachedIpData || await getClientIpData();
+        cachedIpData = data;
         const rtc = await checkWebRtcLeak();
-        output.textContent = [
-          `Public IPv4 / v6: ${data.ip}`,
-          `Country:          ${data.geo.country}`,
-          `Region / City:    ${data.geo.region} / ${data.geo.city}`,
-          `Latitude/Longitude:${data.geo.latitude}, ${data.geo.longitude}`,
-          ``,
-          `WebRTC Status:    ${rtc.safe ? '🛡️ Safe (No Leak)' : '⚠️ Leak Risk Detected'}`,
-          rtc.ips.length ? `WebRTC IPs:       ${rtc.ips.join(', ')}` : '',
-          ``,
-          `User Agent:       ${data.userAgent}`
-        ].filter(Boolean).join('\n');
+        const container = document.getElementById('ipDashboard');
+
+        if (!container) return;
+
+        const mapsUrl = `https://www.google.com/maps?q=${data.geo.latitude},${data.geo.longitude}`;
+
+        container.innerHTML = `
+          <div class="ip-dash-grid">
+            <!-- Card 1: IP & Geolocation -->
+            <div class="ip-dash-card">
+              <div class="ip-dash-header">
+                <span class="ip-dash-icon">🌐</span>
+                <h3>网络身份与地理位置 (IP & Location)</h3>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">Public IP</span>
+                <span class="ip-dash-val highlight">${data.geo.flag} ${data.ip} (${data.version})</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">国家 / 地区 (Country)</span>
+                <span class="ip-dash-val">${data.geo.country} (${data.geo.countryCode})</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">城市 / 省份 (City/Region)</span>
+                <span class="ip-dash-val">${data.geo.city || 'N/A'} · ${data.geo.region || ''}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">邮编 (Postal Code)</span>
+                <span class="ip-dash-val">${data.geo.postal}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">经纬度 (Lat / Lon)</span>
+                <span class="ip-dash-val">
+                  ${data.geo.latitude}, ${data.geo.longitude}
+                  <a href="${mapsUrl}" target="_blank" style="color:var(--aurora-cyan);margin-left:6px;text-decoration:none;">📍地图</a>
+                </span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">时区 (Timezone)</span>
+                <span class="ip-dash-val">${data.timezone.id} (${data.timezone.utc})</span>
+              </div>
+            </div>
+
+            <!-- Card 2: Network & ISP -->
+            <div class="ip-dash-card">
+              <div class="ip-dash-header">
+                <span class="ip-dash-icon">📡</span>
+                <h3>运营商与网络架构 (ISP & ASN)</h3>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">ASN 编号</span>
+                <span class="ip-dash-val highlight">${data.network.asn}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">网络运营商 (ISP)</span>
+                <span class="ip-dash-val">${data.network.isp}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">自治组织 (Organization)</span>
+                <span class="ip-dash-val">${data.network.org}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">网络类型 (Type)</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
+                    ${data.security.hosting ? '🏢 数据中心 / 机房' : '🏠 住宅 / 宽带'}
+                  </span>
+                </span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">本地时间 (Local Time)</span>
+                <span class="ip-dash-val">${data.timezone.currentTime}</span>
+              </div>
+            </div>
+
+            <!-- Card 3: Security & Privacy Audit -->
+            <div class="ip-dash-card">
+              <div class="ip-dash-header">
+                <span class="ip-dash-icon">🛡️</span>
+                <h3>安全与代理泄露审计 (Security Audit)</h3>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">WebRTC 泄露状态</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${rtc.safe ? 'green' : 'red'}">
+                    ${rtc.safe ? '🛡️ 安全 (未泄露真实 IP)' : '⚠️ 存在泄露风险'}
+                  </span>
+                </span>
+              </div>
+              ${rtc.ips.length ? `
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">WebRTC 泄露 IP</span>
+                <span class="ip-dash-val" style="color:var(--aurora-rose);">${rtc.ips.join(', ')}</span>
+              </div>` : ''}
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">Proxy 代理</span>
+                <span class="ip-dash-val"><span class="ip-tag ${data.security.proxy ? 'amber' : 'green'}">${data.security.proxy ? 'YES' : 'NO'}</span></span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">VPN 节点</span>
+                <span class="ip-dash-val"><span class="ip-tag ${data.security.vpn ? 'amber' : 'green'}">${data.security.vpn ? 'YES' : 'NO'}</span></span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">TOR 匿名节点</span>
+                <span class="ip-dash-val"><span class="ip-tag ${data.security.tor ? 'red' : 'green'}">${data.security.tor ? 'YES' : 'NO'}</span></span>
+              </div>
+            </div>
+
+            <!-- Card 4: Client Environment & Fingerprint -->
+            <div class="ip-dash-card">
+              <div class="ip-dash-header">
+                <span class="ip-dash-icon">💻</span>
+                <h3>客户端环境与指纹 (Client Fingerprint)</h3>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">操作系统 (OS)</span>
+                <span class="ip-dash-val">${data.client.os}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">浏览器 (Browser)</span>
+                <span class="ip-dash-val">${data.client.browser}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">屏幕分辨率 (Screen)</span>
+                <span class="ip-dash-val">${data.client.screen}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">系统语言 (Language)</span>
+                <span class="ip-dash-val">${data.client.language}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">网络与 Cookie</span>
+                <span class="ip-dash-val">${data.client.onlineStatus} · Cookie ${data.client.cookiesEnabled}</span>
+              </div>
+            </div>
+          </div>
+        `;
       };
+
       loadDetailedIp();
 
       document.getElementById('btnIpCopy').onclick = () => {
-        if (output.textContent) {
-          navigator.clipboard.writeText(output.textContent);
+        if (cachedIpData) {
+          const rawText = JSON.stringify(cachedIpData, null, 2);
+          navigator.clipboard.writeText(rawText);
           sfx.playSuccess();
           toast.success(i18n.t('toast_copied'));
         }
