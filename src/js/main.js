@@ -374,6 +374,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="ip-dash-val highlight">${data.geo.flag} ${data.ip} (${data.version})</span>
               </div>
               <div class="ip-dash-row">
+                <span class="ip-dash-label">大洲 (Continent)</span>
+                <span class="ip-dash-val">${data.geo.continent}</span>
+              </div>
+              <div class="ip-dash-row">
                 <span class="ip-dash-label">国家 / 地区 (Country)</span>
                 <span class="ip-dash-val">${data.geo.country} (${data.geo.countryCode})</span>
               </div>
@@ -402,11 +406,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="ip-dash-card">
               <div class="ip-dash-header">
                 <span class="ip-dash-icon">📡</span>
-                <h3>运营商与网络架构 (ISP & ASN)</h3>
+                <h3>网络属性与 ASN 流量 (Network & ASN)</h3>
               </div>
               <div class="ip-dash-row">
                 <span class="ip-dash-label">ASN 编号</span>
-                <span class="ip-dash-val highlight">${data.network.asn}</span>
+                <span class="ip-dash-val highlight">
+                  ${data.network.asn}
+                  <span style="font-size:0.72rem;color:var(--aurora-cyan);font-weight:600;margin-left:4px;">[${data.network.asnTraffic}]</span>
+                </span>
               </div>
               <div class="ip-dash-row">
                 <span class="ip-dash-label">网络运营商 (ISP)</span>
@@ -417,16 +424,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="ip-dash-val">${data.network.org}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">网络类型 (Type)</span>
-                <span class="ip-dash-val">
-                  <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
-                    ${data.security.hosting ? '🏢 数据中心 / 机房' : '🏠 住宅 / 宽带'}
-                  </span>
-                </span>
+                <span class="ip-dash-label">关联域名 (Domain)</span>
+                <span class="ip-dash-val" style="color:var(--aurora-purple);">${data.network.domain}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">本地时间 (Local Time)</span>
-                <span class="ip-dash-val">${data.timezone.currentTime}</span>
+                <span class="ip-dash-label">注册机构 (RIR)</span>
+                <span class="ip-dash-val">${data.network.rir}</span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">IP 类型 (Type)</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
+                    ${data.network.type}
+                  </span>
+                </span>
               </div>
             </div>
 
@@ -435,6 +446,38 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="ip-dash-header">
                 <span class="ip-dash-icon">🛡️</span>
                 <h3>安全与代理泄露审计 (Security Audit)</h3>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">数据中心 (Datacenter)</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
+                    ${data.security.hosting ? '是 (Datacenter)' : '否 (Residential)'}
+                  </span>
+                </span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">匿名 IP (Anonymous IP)</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${data.security.anonymousIp ? 'amber' : 'green'}">
+                    ${data.security.anonymousIp ? '是 (Anonymous)' : '否 (Normal)'}
+                  </span>
+                </span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">代理状态 (Proxy Status)</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${data.security.proxy ? 'amber' : 'green'}">
+                    ${data.security.proxyStatus}
+                  </span>
+                </span>
+              </div>
+              <div class="ip-dash-row">
+                <span class="ip-dash-label">威胁状态 (Threat Status)</span>
+                <span class="ip-dash-val">
+                  <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
+                    ${data.security.threatStatus}
+                  </span>
+                </span>
               </div>
               <div class="ip-dash-row">
                 <span class="ip-dash-label">WebRTC 泄露状态</span>
@@ -449,18 +492,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="ip-dash-label">WebRTC 泄露 IP</span>
                 <span class="ip-dash-val" style="color:var(--aurora-rose);">${rtc.ips.join(', ')}</span>
               </div>` : ''}
-              <div class="ip-dash-row">
-                <span class="ip-dash-label">Proxy 代理</span>
-                <span class="ip-dash-val"><span class="ip-tag ${data.security.proxy ? 'amber' : 'green'}">${data.security.proxy ? 'YES' : 'NO'}</span></span>
-              </div>
-              <div class="ip-dash-row">
-                <span class="ip-dash-label">VPN 节点</span>
-                <span class="ip-dash-val"><span class="ip-tag ${data.security.vpn ? 'amber' : 'green'}">${data.security.vpn ? 'YES' : 'NO'}</span></span>
-              </div>
-              <div class="ip-dash-row">
-                <span class="ip-dash-label">TOR 匿名节点</span>
-                <span class="ip-dash-val"><span class="ip-tag ${data.security.tor ? 'red' : 'green'}">${data.security.tor ? 'YES' : 'NO'}</span></span>
-              </div>
             </div>
 
             <!-- Card 4: Client Environment & Fingerprint -->
