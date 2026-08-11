@@ -1,5 +1,5 @@
 import { getClientIpData, checkWebRtcLeak } from './modules/ip-detector.js';
-import { runPingTest } from './modules/ping-tester.js';
+import { runGlobalPingSuite, PING_NODES, createCustomNode, runNodePing } from './modules/ping-tester.js';
 import { queryDnsRecords } from './modules/dns-inspector.js';
 import { formatJson, minifyJson, processBase64, parseJwt, computeHash, convertTimestamp, SAMPLES } from './modules/dev-tools.js';
 import { sfx } from './modules/sfx.js';
@@ -542,22 +542,252 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="btn-tool-action btn-tool-primary" id="btnRunPing">${i18n.t('btn_run_ping')}</button>
       `;
       stageContent.innerHTML = `
-        <div class="editor-pane">
-          <div class="pane-label"><span>GLOBAL NODE PING LATENCY</span></div>
-          <div class="stage-output-box" id="pingOutput" style="min-height:340px;">Click "Run Ping Test" to measure global node latency...</div>
+        <div class="ping-dash-container">
+          <!-- Custom Address Probe Input Bar -->
+          <div style="display:flex;gap:10px;width:100%;">
+            <input class="stage-input" id="customPingInput" placeholder="输入任意 IP、域名或 URL 自定义测速 (例: google.com / 8.8.8.8 / 1.1.1.1)..." style="margin-bottom:0;" />
+            <button class="ws-btn" id="btnAddCustomPing" style="white-space:nowrap;padding:0 20px;">➕ 测速该目标</button>
+          </div>
+
+          <!-- Filter & Control Bar -->
+          <div class="ping-control-bar">
+            <div class="ping-filter-row">
+              <button class="ping-filter-btn active" data-filter="all">全部节点 (All)</button>
+              <button class="ping-filter-btn" data-filter="china">中国节点 (China)</button>
+              <button class="ping-filter-btn" data-filter="asia">亚太节点 (Asia)</button>
+              <button class="ping-filter-btn" data-filter="western">欧美节点 (West)</button>
+              <button class="ping-filter-btn" data-filter="dev">AI & API (Dev)</button>
+            </div>
+            <span style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-dim);" id="pingStatusText">准备就绪 · 共 14 节点</span>
+          </div>
+
+          <!-- Live Progress Bar -->
+          <div class="ping-progress-wrap" id="pingProgressWrap">
+            <div class="ping-progress-fill" id="pingProgressFill"></div>
+          </div>
+
+          <!-- Summary Stats -->
+          <div class="ping-stats-row">
+            <div class="ping-stat-card">
+              <div class="ping-stat-label">最佳延迟 (MIN)</div>
+              <div class="ping-stat-val" id="statPingMin" style="color:var(--aurora-emerald);">—</div>
+            </div>
+            <div class="ping-stat-card">
+              <div class="ping-stat-label">平均延迟 (AVG)</div>
+              <div class="ping-stat-val" id="statPingAvg">—</div>
+            </div>
+            <div class="ping-stat-card">
+              <div class="ping-stat-label">极速节点 (&lt;120ms)</div>
+              <div class="ping-stat-val" id="statPingFast" style="color:var(--aurora-cyan);">—</div>
+            </div>
+            <div class="ping-stat-card">
+              <div class="ping-stat-label">丢包/超时 (LOSS)</div>
+              <div class="ping-stat-val" id="statPingLoss" style="color:var(--aurora-amber);">—</div>
+            </div>
+          </div>
+
+          <!-- Node Grid -->
+          <div class="ping-node-grid" id="pingNodeGrid"></div>
         </div>
       `;
 
-      const output = document.getElementById('pingOutput');
-      document.getElementById('btnRunPing').onclick = async () => {
-        sfx.playClick();
-        output.textContent = 'Measuring latency to global edge nodes...';
-        const res = await runPingTest();
-        sfx.playSuccess();
-        output.textContent = res.map(r =>
-          `${r.name.padEnd(32)} ${String(r.latency).padStart(4)} ms   [${r.status}]`
-        ).join('\n');
+      let currentFilter = 'all';
+      
+      // Load custom nodes from localStorage
+      const loadCustomNodes = () => {
+        try {
+          return JSON.parse(localStorage.getItem('nexus_custom_ping_nodes') || '[]');
+        } catch (e) {
+          return [];
+        }
       };
+
+      const saveCustomNodes = (nodes) => {
+        try {
+          localStorage.setItem('nexus_custom_ping_nodes', JSON.stringify(nodes));
+        } catch (e) {}
+      };
+
+      let customNodes = loadCustomNodes();
+      const gridContainer = document.getElementById('pingNodeGrid');
+      const progressWrap = document.getElementById('pingProgressWrap');
+      const progressFill = document.getElementById('pingProgressFill');
+      const statusText = document.getElementById('pingStatusText');
+      const customInput = document.getElementById('customPingInput');
+      const addCustomBtn = document.getElementById('btnAddCustomPing');
+
+      // Bind filter buttons
+      document.querySelectorAll('.ping-filter-btn').forEach(btn => {
+        btn.onclick = () => {
+          sfx.playClick();
+          document.querySelectorAll('.ping-filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.dataset.filter;
+          startPingSuite();
+        };
+      });
+
+      const getActiveNodes = () => {
+        const base = currentFilter === 'all'
+          ? PING_NODES
+          : PING_NODES.filter(n => n.category === currentFilter);
+        return [...customNodes, ...base];
+      };
+
+      const bindCardActionButtons = () => {
+        // Delete Custom Node
+        gridContainer.querySelectorAll('.ping-delete-btn').forEach(btn => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            sfx.playClick();
+            const id = btn.dataset.id;
+            customNodes = customNodes.filter(n => n.id !== id);
+            saveCustomNodes(customNodes);
+            toast.info('已移除自定义测速目标');
+            startPingSuite();
+          };
+        });
+
+        // Single Node Re-Test
+        gridContainer.querySelectorAll('.ping-retest-btn').forEach(btn => {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            sfx.playClick();
+            const id = btn.dataset.id;
+            const activeNodes = getActiveNodes();
+            const targetNode = activeNodes.find(n => n.id === id);
+            if (!targetNode) return;
+
+            const card = document.getElementById(`ping-card-${id}`);
+            if (card) {
+              card.querySelector('.ping-node-metrics').innerHTML = `
+                <div class="ping-avg-ms timeout">...</div>
+                <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--aurora-cyan);font-family:var(--font-mono);">单点重新测速中...</div>
+              `;
+            }
+
+            const res = await runNodePing(targetNode, 3);
+            sfx.playSuccess();
+
+            if (card) {
+              const avgStr = res.status === 'ok' ? `${res.avg} ms` : '超时 (Timeout)';
+              card.querySelector('.ping-node-metrics').innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="ping-avg-ms ${res.grade}">${avgStr}</div>
+                  <button class="ping-retest-btn" data-id="${res.id}" title="重新测试此节点">🔄</button>
+                </div>
+                <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--text-dim);font-family:var(--font-mono);">MIN ${res.min}ms · MAX ${res.max}ms · LOSS ${res.loss}%</div>
+              `;
+              bindCardActionButtons();
+            }
+
+            toast.success(`【${res.name}】单点测速完成: ${res.avg} ms`);
+          };
+        });
+      };
+
+      const renderInitialCards = () => {
+        const nodes = getActiveNodes();
+        statusText.textContent = `当前列表：${nodes.length} 节点`;
+        gridContainer.innerHTML = nodes.map(n => `
+          <div class="ping-node-card" id="ping-card-${n.id}">
+            <div class="ping-node-info">
+              <span class="ping-node-flag">${n.flag}</span>
+              <div>
+                <div class="ping-node-name" style="display:flex;align-items:center;gap:6px;">
+                  <span>${n.name}</span>
+                  ${n.isCustom ? `<span class="ip-tag amber">自定义</span><button class="ping-delete-btn" data-id="${n.id}" title="删除此节点" style="background:none;border:none;color:var(--aurora-rose);cursor:pointer;font-size:0.9rem;padding:0 4px;">✕</button>` : ''}
+                </div>
+                <div class="ping-node-meta" style="color:var(--aurora-cyan);font-weight:500;">${n.host}</div>
+              </div>
+            </div>
+            <div class="ping-node-metrics">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="ping-avg-ms timeout">—</div>
+                <button class="ping-retest-btn" data-id="${n.id}" title="重新测试此节点">🔄</button>
+              </div>
+              <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--text-dim);font-family:var(--font-mono);">等待测速</div>
+            </div>
+          </div>
+        `).join('');
+
+        bindCardActionButtons();
+      };
+
+      const startPingSuite = async () => {
+        renderInitialCards();
+        const activeNodes = getActiveNodes();
+        progressWrap.classList.add('show');
+        progressFill.style.width = '0%';
+        statusText.textContent = '正在从本地浏览器发往多节点测速...';
+
+        const completedResults = [];
+
+        await runGlobalPingSuite(activeNodes, (res, current, total) => {
+          completedResults.push(res);
+          const percent = Math.round((current / total) * 100);
+          progressFill.style.width = `${percent}%`;
+
+          // Update individual card
+          const card = document.getElementById(`ping-card-${res.id}`);
+          if (card) {
+            const avgStr = res.status === 'ok' ? `${res.avg} ms` : '超时 (Timeout)';
+            const gradeClass = res.grade;
+            card.querySelector('.ping-node-metrics').innerHTML = `
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="ping-avg-ms ${gradeClass}">${avgStr}</div>
+                <button class="ping-retest-btn" data-id="${res.id}" title="重新测试此节点">🔄</button>
+              </div>
+              <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--text-dim);font-family:var(--font-mono);">MIN ${res.min}ms · MAX ${res.max}ms · LOSS ${res.loss}%</div>
+            `;
+            bindCardActionButtons();
+          }
+
+          // Update Summary Stats
+          const validAvgs = completedResults.filter(r => r.status === 'ok').map(r => r.avg);
+          const mins = completedResults.filter(r => r.status === 'ok').map(r => r.min);
+          const fastCount = completedResults.filter(r => r.status === 'ok' && r.avg < 120).length;
+
+          if (mins.length) {
+            document.getElementById('statPingMin').textContent = `${Math.min(...mins)} ms`;
+            const avgSum = validAvgs.reduce((a, b) => a + b, 0);
+            document.getElementById('statPingAvg').textContent = `${Math.round(avgSum / validAvgs.length)} ms`;
+            document.getElementById('statPingFast').textContent = `${fastCount} / ${completedResults.length}`;
+            const totalLoss = completedResults.reduce((a, b) => a + b.loss, 0);
+            document.getElementById('statPingLoss').textContent = `${Math.round(totalLoss / completedResults.length)}%`;
+          }
+        });
+
+        sfx.playSuccess();
+        statusText.textContent = '✅ 全球节点测速完成 (均由客户端网络发起)';
+        setTimeout(() => progressWrap.classList.remove('show'), 1500);
+      };
+
+      // Add Custom Ping Target Logic
+      const handleAddCustom = async () => {
+        const val = customInput.value;
+        if (!val.trim()) return;
+        sfx.playClick();
+        const newNode = createCustomNode(val);
+        if (!newNode) return;
+        customNodes.unshift(newNode);
+        saveCustomNodes(customNodes);
+        customInput.value = '';
+        toast.success(`已添加并保存目标: ${newNode.host}`);
+        startPingSuite();
+      };
+
+      addCustomBtn.onclick = handleAddCustom;
+      customInput.onkeydown = (e) => {
+        if (e.key === 'Enter') handleAddCustom();
+      };
+
+      document.getElementById('btnRunPing').onclick = () => {
+        sfx.playClick();
+        startPingSuite();
+      };
+
+      startPingSuite();
     }
 
     else if (id === 'dns') {
@@ -600,8 +830,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial load
-  switchTool('json');
+  // Initial load: Default to IP Lookup Homepage
+  switchTool('ip');
 
   // ====== Cmd+K Spotlight ======
   const cmdkOverlay = document.getElementById('cmdkOverlay');
