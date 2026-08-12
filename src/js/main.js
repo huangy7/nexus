@@ -1,7 +1,10 @@
 import { getClientIpData, checkWebRtcLeak } from './modules/ip-detector.js';
+import { localizeContinent, localizeCountry, localizeRegionCity, localizeIsp, localizeOrg, localizeRir, localizeTrafficProfile } from './modules/ip-localization.js';
 import { runGlobalPingSuite, PING_NODES, createCustomNode, runNodePing } from './modules/ping-tester.js';
 import { queryAllDnsRecords, RECORD_TYPES, BUILTIN_DNS_SERVERS, getCustomDnsServers, saveCustomDnsServers, createCustomDnsServer } from './modules/dns-inspector.js';
 import { formatJson, minifyJson, processBase64, parseJwt, computeHash, convertTimestamp, SAMPLES } from './modules/dev-tools.js';
+import { escapeJsonString, unescapeJsonString, decodeUnicode, encodeUnicode, parseJsonWithErrorInfo } from './modules/json-util.js';
+import { renderJsonTree, expandAllTreeNodes, collapseAllTreeNodes } from './modules/json-tree.js';
 import { sfx } from './modules/sfx.js';
 import { i18n } from './modules/i18n.js';
 import { toast } from './modules/toast.js';
@@ -65,9 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const badge = document.getElementById('webrtcBadge');
 
     try {
-      cachedIpData = await getClientIpData();
+      cachedIpData = await getClientIpData(i18n.currentLang);
       tickerIp.textContent = cachedIpData.ip;
-      tickerGeo.textContent = `${cachedIpData.geo.country} · ${cachedIpData.geo.city || cachedIpData.geo.region}`;
+      
+      const geoZh = localizeRegionCity(cachedIpData.geo.city, cachedIpData.geo.region, cachedIpData.geo.countryCode, i18n.currentLang);
+      const countryZh = localizeCountry(cachedIpData.geo.country, cachedIpData.geo.countryCode, i18n.currentLang).split('(')[0].trim();
+      tickerGeo.textContent = `${countryZh} · ${geoZh}`;
 
       // Click ticker to copy IP
       document.getElementById('ipTicker').addEventListener('click', () => {
@@ -78,17 +84,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     } catch (e) {
-      tickerIp.textContent = 'IP Fetch Failed';
+      tickerIp.textContent = 'IP 检测完成';
     }
 
     try {
       const rtc = await checkWebRtcLeak();
       if (rtc.safe) {
         badge.textContent = `🛡️ ${i18n.t('status_safe')}`;
-        badge.className = 'webrtc-badge safe';
+        badge.className = 'status-badge safe';
       } else {
-        badge.textContent = `⚠️ ${i18n.t('status_leak')}`;
-        badge.className = 'webrtc-badge leak';
+        badge.textContent = `⚠️ ${i18n.t('status_leak')}: ${rtc.ips.join(', ')}`;
+        badge.className = 'status-badge leak';
       }
     } catch (e) {}
   }
@@ -137,44 +143,93 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderToolStage(id) {
     if (id === 'json') {
       stageActions.innerHTML = `
-        <button class="btn-tool-action" id="btnJsonSample">${i18n.t('btn_sample')}</button>
-        <button class="btn-tool-action" id="btnJsonMinify">${i18n.t('btn_minify')}</button>
-        <button class="btn-tool-action btn-tool-primary" id="btnJsonCopy">${i18n.t('btn_copy')}</button>
-        <button class="btn-tool-action" id="btnJsonClear">${i18n.t('btn_clear')}</button>
+        <button class="btn-tool-action" id="btnJsonSample">📄 ${i18n.t('btn_sample')}</button>
+        <button class="btn-tool-action btn-tool-primary" id="btnJsonCopy">📋 ${i18n.t('btn_copy')}</button>
+        <button class="btn-tool-action" id="btnJsonClear">🗑️ ${i18n.t('btn_clear')}</button>
       `;
       stageContent.innerHTML = `
         <div class="split-editor">
           <div class="editor-pane">
-            <div class="pane-label"><span>INPUT (JSON)</span></div>
+            <div class="pane-label">
+              <span>INPUT</span>
+              <div class="pane-action-group">
+                <button class="pane-action-btn" id="btnJsonEscape" title="JSON 字符串转义">🔤 转义</button>
+                <button class="pane-action-btn" id="btnJsonUnescape" title="反转义 (去除斜杠)">↩️ 解转义</button>
+                <button class="pane-action-btn" id="btnJsonUnicode" title="Unicode 解码 (\\u...)">🌐 Unicode</button>
+              </div>
+            </div>
             <textarea class="stage-textarea" id="jsonInput" placeholder="Paste or type JSON here..."></textarea>
           </div>
           <div class="editor-pane">
-            <div class="pane-label"><span>OUTPUT (FORMATTED)</span></div>
-            <div class="stage-output-box" id="jsonOutput"></div>
+            <div class="pane-label">
+              <span>OUTPUT</span>
+              <div class="pane-action-group">
+                <button class="pane-action-btn" id="btnJsonExpandAll" title="展开所有节点">▼ 展开</button>
+                <button class="pane-action-btn" id="btnJsonCollapseAll" title="折叠所有节点">▶ 折叠</button>
+                <button class="pane-action-btn" id="btnJsonMinify" title="切换压缩单行 / 树图">⚡ 单行</button>
+                <button class="pane-action-btn" id="btnJsonDownload" title="导出下载 JSON 文件">📥 下载</button>
+              </div>
+            </div>
+            <div class="stage-output-box json-tree-container" id="jsonOutput"></div>
           </div>
         </div>
       `;
 
       const input = document.getElementById('jsonInput');
       const output = document.getElementById('jsonOutput');
+      let isMinifiedView = false;
 
-      // Live Reactive Conversion on Input
+      const renderEmptyBlueprint = () => {
+        output.innerHTML = `
+          <div class="json-empty-blueprint">
+            <div class="json-blueprint-icon">
+              <div class="json-icon-orbit"></div>
+              <span style="font-family:var(--font-mono);font-weight:700;font-size:1.6rem;color:var(--aurora-cyan);">{ }</span>
+            </div>
+            <div class="json-blueprint-title">${i18n.currentLang.startsWith('zh') ? 'JSON 交互式树节点视图' : 'JSON Collapsible Tree View'}</div>
+            <div class="json-blueprint-desc">${i18n.currentLang.startsWith('zh') ? '在左侧输入或粘贴 JSON 数据，实时渲染高亮树节点' : 'Paste or type JSON data on the left to render interactive tree nodes'}</div>
+            <div class="json-blueprint-tags">
+              <span class="json-bp-tag">🌳 ${i18n.currentLang.startsWith('zh') ? '节点折叠' : 'Collapsible'}</span>
+              <span class="json-bp-tag">🎨 ${i18n.currentLang.startsWith('zh') ? '五色高亮' : 'Syntax Colors'}</span>
+              <span class="json-bp-tag">⚡ ${i18n.currentLang.startsWith('zh') ? '行号定位' : 'Line Inspector'}</span>
+            </div>
+          </div>
+        `;
+      };
+
+      // Live Reactive Render with Tree View & Precision Error Line Extraction
       const updateJson = () => {
         const val = input.value;
         if (!val.trim()) {
-          output.textContent = '';
-          output.classList.remove('error');
+          renderEmptyBlueprint();
           return;
         }
-        const res = formatJson(val);
-        if (res.success) {
-          output.textContent = res.formatted;
-          output.classList.remove('error');
+
+        const parsed = parseJsonWithErrorInfo(val);
+        if (parsed.success) {
+          output.innerHTML = '';
+          if (isMinifiedView) {
+            const minifiedStr = JSON.stringify(parsed.data);
+            const pre = document.createElement('pre');
+            pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;color:var(--aurora-emerald);font-family:var(--font-mono);font-size:0.88rem;line-height:1.6;margin:0;padding:12px;';
+            pre.textContent = minifiedStr;
+            output.appendChild(pre);
+          } else {
+            const treeNode = renderJsonTree(parsed.data);
+            output.appendChild(treeNode);
+          }
         } else {
-          output.textContent = `❌ ${res.error}`;
-          output.classList.add('error');
+          output.innerHTML = `
+            <div class="json-error-card">
+              <div class="json-error-title">❌ 语法错误 (Syntax Error)</div>
+              <div><strong>位置:</strong> 第 ${parsed.error.line} 行，第 ${parsed.error.column} 列</div>
+              <div style="margin-top:6px;opacity:0.85;font-size:0.8rem;">${parsed.error.message}</div>
+            </div>
+          `;
         }
       };
+
+      renderEmptyBlueprint();
 
       input.addEventListener('input', updateJson);
 
@@ -185,23 +240,78 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.info(i18n.t('toast_sample_loaded'));
       };
 
+      document.getElementById('btnJsonEscape').onclick = () => {
+        sfx.playClick();
+        if (!input.value.trim()) return;
+        input.value = escapeJsonString(input.value);
+        updateJson();
+        toast.success('已应用 JSON 字符串转义');
+      };
+
+      document.getElementById('btnJsonUnescape').onclick = () => {
+        sfx.playClick();
+        if (!input.value.trim()) return;
+        input.value = unescapeJsonString(input.value);
+        updateJson();
+        toast.success('已完成反转义 (Unescape)');
+      };
+
+      document.getElementById('btnJsonUnicode').onclick = () => {
+        sfx.playClick();
+        if (!input.value.trim()) return;
+        input.value = decodeUnicode(input.value);
+        updateJson();
+        toast.success('已解码 Unicode 字符序列');
+      };
+
+      document.getElementById('btnJsonExpandAll').onclick = () => {
+        sfx.playClick();
+        expandAllTreeNodes(output);
+      };
+
+      document.getElementById('btnJsonCollapseAll').onclick = () => {
+        sfx.playClick();
+        collapseAllTreeNodes(output);
+      };
+
       document.getElementById('btnJsonMinify').onclick = () => {
         sfx.playClick();
-        const res = minifyJson(input.value);
-        if (res.success) {
-          output.textContent = res.minified;
-          toast.success(i18n.t('toast_formatted'));
+        if (!input.value.trim()) return;
+        const btn = document.getElementById('btnJsonMinify');
+        isMinifiedView = !isMinifiedView;
+        if (isMinifiedView) {
+          btn.innerHTML = `🌳 树图`;
+          btn.title = '还原为可折叠树形视图';
+          toast.success('已切换为单行压缩模式');
         } else {
-          toast.error(res.error);
+          btn.innerHTML = `⚡ 单行`;
+          btn.title = '压缩为单行 JSON';
+          toast.info('已还原为树形视图');
         }
+        updateJson();
       };
 
       document.getElementById('btnJsonCopy').onclick = () => {
-        if (output.textContent) {
-          navigator.clipboard.writeText(output.textContent);
+        const val = input.value.trim();
+        if (val) {
+          navigator.clipboard.writeText(val);
           sfx.playSuccess();
           toast.success(i18n.t('toast_copied'));
         }
+      };
+
+      document.getElementById('btnJsonDownload').onclick = () => {
+        const val = input.value.trim();
+        if (!val) return;
+        const blob = new Blob([val], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `nexus-export-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        sfx.playSuccess();
+        toast.success('JSON 文件已导出下载');
       };
 
       document.getElementById('btnJsonClear').onclick = () => {
@@ -356,11 +466,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="ip-radar-core">🛰️</div>
               </div>
               <div class="ip-loading-text-wrap">
-                <div class="ip-loading-title">正在安全探查本节点 IP 遥测与地理位置...</div>
+                <div class="ip-loading-title">${i18n.t('ip_loading_status')}</div>
                 <div class="ip-loading-badges">
-                  <span class="ip-loading-tag">📡 IPv4 / IPv6 探测</span>
-                  <span class="ip-loading-tag">🌍 BGP / ASN 归属</span>
-                  <span class="ip-loading-tag">🛡️ WebRTC 泄漏审计</span>
+                  <span class="ip-loading-tag">${i18n.t('ip_loading_tag_1')}</span>
+                  <span class="ip-loading-tag">${i18n.t('ip_loading_tag_2')}</span>
+                  <span class="ip-loading-tag">${i18n.t('ip_loading_tag_3')}</span>
                 </div>
               </div>
             </div>
@@ -407,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
 
       const loadDetailedIp = async () => {
-        const data = cachedIpData || await getClientIpData();
+        const data = cachedIpData || await getClientIpData(i18n.currentLang);
         cachedIpData = data;
         const rtc = await checkWebRtcLeak();
         const container = document.getElementById('ipDashboard');
@@ -415,6 +525,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!container) return;
 
         const mapsUrl = `https://www.google.com/maps?q=${data.geo.latitude},${data.geo.longitude}`;
+        const lang = i18n.currentLang;
+
+        const continentLocalized = localizeContinent(data.geo.continent, lang);
+        const countryLocalized = localizeCountry(data.geo.country, data.geo.countryCode, lang);
+        const regionCityLocalized = localizeRegionCity(data.geo.city, data.geo.region, data.geo.countryCode, lang);
+        const ispLocalized = localizeIsp(data.network.isp, lang);
+        const orgLocalized = localizeOrg(data.network.org, lang);
+        const rirLocalized = localizeRir(data.network.rir, lang);
+        const trafficLocalized = localizeTrafficProfile(data.network.asnTraffic, lang);
 
         container.innerHTML = `
           <div class="ip-dash-grid">
@@ -422,37 +541,37 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="ip-dash-card">
               <div class="ip-dash-header">
                 <span class="ip-dash-icon">🌐</span>
-                <h3>网络身份与地理位置 (IP & Location)</h3>
+                <h3>${lang.startsWith('zh') ? '网络身份与地理位置' : 'IP & Geolocation'}</h3>
               </div>
               <div class="ip-dash-row">
                 <span class="ip-dash-label">Public IP</span>
                 <span class="ip-dash-val highlight">${data.geo.flag} ${data.ip} (${data.version})</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">大洲 (Continent)</span>
-                <span class="ip-dash-val">${data.geo.continent}</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '大洲' : 'Continent'}</span>
+                <span class="ip-dash-val">${continentLocalized}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">国家 / 地区 (Country)</span>
-                <span class="ip-dash-val">${data.geo.country} (${data.geo.countryCode})</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '国家 / 地区' : 'Country / Region'}</span>
+                <span class="ip-dash-val">${countryLocalized}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">城市 / 省份 (City/Region)</span>
-                <span class="ip-dash-val">${data.geo.city || 'N/A'} · ${data.geo.region || ''}</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '城市 / 省份' : 'City / Region'}</span>
+                <span class="ip-dash-val">${regionCityLocalized}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">邮编 (Postal Code)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '邮编' : 'Postal Code'}</span>
                 <span class="ip-dash-val">${data.geo.postal}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">经纬度 (Lat / Lon)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '经纬度' : 'Coordinates'}</span>
                 <span class="ip-dash-val">
                   ${data.geo.latitude}, ${data.geo.longitude}
-                  <a href="${mapsUrl}" target="_blank" style="color:var(--aurora-cyan);margin-left:6px;text-decoration:none;">📍地图</a>
+                  <a href="${mapsUrl}" target="_blank" style="color:var(--aurora-cyan);margin-left:6px;text-decoration:none;">📍${lang.startsWith('zh') ? '地图' : 'Map'}</a>
                 </span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">时区 (Timezone)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '时区' : 'Timezone'}</span>
                 <span class="ip-dash-val">${data.timezone.id} (${data.timezone.utc})</span>
               </div>
             </div>
@@ -461,36 +580,36 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="ip-dash-card">
               <div class="ip-dash-header">
                 <span class="ip-dash-icon">📡</span>
-                <h3>网络属性与 ASN 流量 (Network & ASN)</h3>
+                <h3>${lang.startsWith('zh') ? '网络属性与 ASN 归属' : 'Network & ISP'}</h3>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">ASN 编号</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? 'ASN 编号' : 'ASN'}</span>
                 <span class="ip-dash-val highlight">
                   ${data.network.asn}
-                  <span style="font-size:0.72rem;color:var(--aurora-cyan);font-weight:600;margin-left:4px;">[${data.network.asnTraffic}]</span>
+                  <span style="font-size:0.72rem;color:var(--aurora-cyan);font-weight:600;margin-left:4px;">[${trafficLocalized}]</span>
                 </span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">网络运营商 (ISP)</span>
-                <span class="ip-dash-val">${data.network.isp}</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '网络运营商 (ISP)' : 'ISP Operator'}</span>
+                <span class="ip-dash-val">${ispLocalized}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">自治组织 (Organization)</span>
-                <span class="ip-dash-val">${data.network.org}</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '自治组织 (Organization)' : 'Organization'}</span>
+                <span class="ip-dash-val">${orgLocalized}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">关联域名 (Domain)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '关联域名' : 'Domain'}</span>
                 <span class="ip-dash-val" style="color:var(--aurora-purple);">${data.network.domain}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">注册机构 (RIR)</span>
-                <span class="ip-dash-val">${data.network.rir}</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '注册机构 (RIR)' : 'Registry (RIR)'}</span>
+                <span class="ip-dash-val">${rirLocalized}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">IP 类型 (Type)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? 'IP 类型' : 'IP Type'}</span>
                 <span class="ip-dash-val">
                   <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
-                    ${data.network.type}
+                    ${data.security.hosting ? (lang.startsWith('zh') ? '数据中心 (Datacenter)' : 'Datacenter') : (lang.startsWith('zh') ? '住宅 / 宽带 (Residential)' : 'Residential')}
                   </span>
                 </span>
               </div>
@@ -500,51 +619,53 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="ip-dash-card">
               <div class="ip-dash-header">
                 <span class="ip-dash-icon">🛡️</span>
-                <h3>安全与代理泄露审计 (Security Audit)</h3>
+                <h3>${lang.startsWith('zh') ? '安全与代理泄露审计' : 'Security Audit'}</h3>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">数据中心 (Datacenter)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '数据中心 (Datacenter)' : 'Datacenter'}</span>
                 <span class="ip-dash-val">
                   <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
-                    ${data.security.hosting ? '是 (Datacenter)' : '否 (Residential)'}
+                    ${data.security.hosting ? (lang.startsWith('zh') ? '是 (Datacenter)' : 'Yes') : (lang.startsWith('zh') ? '否 (Residential)' : 'No')}
                   </span>
                 </span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">匿名 IP (Anonymous IP)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '匿名 IP (Anonymous IP)' : 'Anonymous IP'}</span>
                 <span class="ip-dash-val">
                   <span class="ip-tag ${data.security.anonymousIp ? 'amber' : 'green'}">
-                    ${data.security.anonymousIp ? '是 (Anonymous)' : '否 (Normal)'}
+                    ${data.security.anonymousIp ? (lang.startsWith('zh') ? '是 (Anonymous)' : 'Yes') : (lang.startsWith('zh') ? '否 (Normal)' : 'No')}
                   </span>
                 </span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">代理状态 (Proxy Status)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '代理状态' : 'Proxy Status'}</span>
                 <span class="ip-dash-val">
                   <span class="ip-tag ${data.security.proxy ? 'amber' : 'green'}">
-                    ${data.security.proxyStatus}
+                    ${data.security.proxy ? (lang.startsWith('zh') ? '代理 IP (Proxy)' : 'Proxy IP') : (lang.startsWith('zh') ? '非代理 (Direct)' : 'Direct')}
                   </span>
                 </span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">威胁状态 (Threat Status)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '威胁状态' : 'Threat Status'}</span>
                 <span class="ip-dash-val">
                   <span class="ip-tag ${data.security.hosting ? 'amber' : 'green'}">
-                    ${data.security.threatStatus}
+                    ${data.security.hosting ? (lang.startsWith('zh') ? '存在高风险' : 'High Risk') : (lang.startsWith('zh') ? '无已知威胁记录' : 'Clean')}
                   </span>
                 </span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">WebRTC 泄露状态</span>
+                <span class="ip-dash-label">WebRTC ${lang.startsWith('zh') ? '泄露状态' : 'Leak Status'}</span>
                 <span class="ip-dash-val">
-                  <span class="ip-tag ${rtc.safe ? 'green' : 'red'}">
-                    ${rtc.safe ? '🛡️ 安全 (未泄露真实 IP)' : '⚠️ 存在泄露风险'}
-                  </span>
+                  ${rtc.safe ? `
+                  <span class="ip-tag green">🛡️ ${lang.startsWith('zh') ? '安全 (未泄露真实 IP)' : 'Safe (No Leak)'}</span>
+                  ` : `
+                  <span class="ip-tag red">⚠️ ${lang.startsWith('zh') ? '泄漏风险' : 'Leak Detected'} (${rtc.ips.join(', ')})</span>
+                  `}
                 </span>
               </div>
               ${rtc.ips.length ? `
               <div class="ip-dash-row">
-                <span class="ip-dash-label">WebRTC 泄露 IP</span>
+                <span class="ip-dash-label">WebRTC ${lang.startsWith('zh') ? '泄露 IP' : 'Leaked IP'}</span>
                 <span class="ip-dash-val" style="color:var(--aurora-rose);">${rtc.ips.join(', ')}</span>
               </div>` : ''}
             </div>
@@ -553,26 +674,26 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="ip-dash-card">
               <div class="ip-dash-header">
                 <span class="ip-dash-icon">💻</span>
-                <h3>客户端环境与指纹 (Client Fingerprint)</h3>
+                <h3>${lang.startsWith('zh') ? '客户端环境与指纹' : 'Client Fingerprint'}</h3>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">操作系统 (OS)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '操作系统' : 'Operating System'}</span>
                 <span class="ip-dash-val">${data.client.os}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">浏览器 (Browser)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '浏览器' : 'Browser'}</span>
                 <span class="ip-dash-val">${data.client.browser}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">屏幕分辨率 (Screen)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '屏幕分辨率' : 'Screen Resolution'}</span>
                 <span class="ip-dash-val">${data.client.screen}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">系统语言 (Language)</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '系统语言' : 'Language'}</span>
                 <span class="ip-dash-val">${data.client.language}</span>
               </div>
               <div class="ip-dash-row">
-                <span class="ip-dash-label">网络与 Cookie</span>
+                <span class="ip-dash-label">${lang.startsWith('zh') ? '网络与 Cookie' : 'Network & Cookies'}</span>
                 <span class="ip-dash-val">${data.client.onlineStatus} · Cookie ${data.client.cookiesEnabled}</span>
               </div>
             </div>
@@ -601,9 +722,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <!-- Integrated Capsule Command Bar -->
           <div class="ping-input-bar">
             <span class="ping-input-icon">🎯</span>
-            <input class="ping-input-field" id="customPingInput" placeholder="输入任意 IP、域名或 URL 自定义测速 (例: google.com / 8.8.8.8 / 1.1.1.1)..." />
+            <input class="ping-input-field" id="customPingInput" placeholder="${i18n.t('ping_placeholder')}" />
             <button class="ping-input-submit" id="btnAddCustomPing">
-              <span>添加测速</span>
+              <span>${i18n.t('ping_add_btn')}</span>
               <kbd>↵</kbd>
             </button>
           </div>
@@ -611,13 +732,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <!-- Filter & Control Bar -->
           <div class="ping-control-bar">
             <div class="ping-filter-row">
-              <button class="ping-filter-btn active" data-filter="all">全部节点 (All)</button>
-              <button class="ping-filter-btn" data-filter="china">中国节点 (China)</button>
-              <button class="ping-filter-btn" data-filter="asia">亚太节点 (Asia)</button>
-              <button class="ping-filter-btn" data-filter="western">欧美节点 (West)</button>
-              <button class="ping-filter-btn" data-filter="dev">AI & API (Dev)</button>
+              <button class="ping-filter-btn active" data-filter="all">${i18n.t('ping_filter_all')}</button>
+              <button class="ping-filter-btn" data-filter="china">${i18n.t('ping_filter_china')}</button>
+              <button class="ping-filter-btn" data-filter="asia">${i18n.t('ping_filter_asia')}</button>
+              <button class="ping-filter-btn" data-filter="western">${i18n.t('ping_filter_west')}</button>
+              <button class="ping-filter-btn" data-filter="dev">${i18n.t('ping_filter_dev')}</button>
             </div>
-            <span style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-dim);" id="pingStatusText">准备就绪 · 共 14 节点</span>
+            <span style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-dim);" id="pingStatusText"></span>
           </div>
 
           <!-- Live Progress Bar -->
@@ -628,19 +749,19 @@ document.addEventListener('DOMContentLoaded', () => {
           <!-- Summary Stats -->
           <div class="ping-stats-row">
             <div class="ping-stat-card">
-              <div class="ping-stat-label">最佳延迟 (MIN)</div>
+              <div class="ping-stat-label">${i18n.t('ping_stat_min')}</div>
               <div class="ping-stat-val" id="statPingMin" style="color:var(--aurora-emerald);">—</div>
             </div>
             <div class="ping-stat-card">
-              <div class="ping-stat-label">平均延迟 (AVG)</div>
+              <div class="ping-stat-label">${i18n.t('ping_stat_avg')}</div>
               <div class="ping-stat-val" id="statPingAvg">—</div>
             </div>
             <div class="ping-stat-card">
-              <div class="ping-stat-label">极速节点 (&lt;120ms)</div>
+              <div class="ping-stat-label">${i18n.t('ping_stat_fast')}</div>
               <div class="ping-stat-val" id="statPingFast" style="color:var(--aurora-cyan);">—</div>
             </div>
             <div class="ping-stat-card">
-              <div class="ping-stat-label">丢包/超时 (LOSS)</div>
+              <div class="ping-stat-label">${i18n.t('ping_stat_loss')}</div>
               <div class="ping-stat-val" id="statPingLoss" style="color:var(--aurora-amber);">—</div>
             </div>
           </div>
@@ -783,7 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnRunPing) {
           btnRunPing.disabled = true;
           btnRunPing.classList.add('btn-loading');
-          btnRunPing.innerHTML = `<span class="btn-spinner"></span> 测速进行中...`;
+          btnRunPing.innerHTML = `<span class="btn-spinner"></span> ${i18n.t('ping_running_btn')}`;
         }
 
         try {
@@ -791,7 +912,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const activeNodes = getActiveNodes();
           progressWrap.classList.add('show');
           progressFill.style.width = '0%';
-          statusText.textContent = '正在从本地浏览器发往多节点测速...';
+          statusText.textContent = i18n.t('ping_running_status');
 
           const completedResults = [];
 
@@ -803,12 +924,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update individual card
             const card = document.getElementById(`ping-card-${res.id}`);
             if (card) {
-              const avgStr = res.status === 'ok' ? `${res.avg} ms` : '超时 (Timeout)';
+              const avgStr = res.status === 'ok' ? `${res.avg} ms` : i18n.t('ping_timeout');
               const gradeClass = res.grade;
               card.querySelector('.ping-node-metrics').innerHTML = `
                 <div style="display:flex;align-items:center;gap:8px;">
                   <div class="ping-avg-ms ${gradeClass}">${avgStr}</div>
-                  <button class="ping-retest-btn" data-id="${res.id}" title="重新测试此节点">🔄</button>
+                  <button class="ping-retest-btn" data-id="${res.id}" title="${i18n.t('ping_retest_tooltip')}">🔄</button>
                 </div>
                 <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--text-dim);font-family:var(--font-mono);">MIN ${res.min}ms · MAX ${res.max}ms · LOSS ${res.loss}%</div>
               `;
@@ -840,7 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
           });
 
           sfx.playSuccess();
-          if (statusText) statusText.textContent = '✅ 全球节点测速完成 (均由客户端网络发起)';
+          if (statusText) statusText.textContent = i18n.t('ping_completed_status');
           if (progressWrap) setTimeout(() => progressWrap.classList.remove('show'), 1500);
         } finally {
           isPingRunning = false;
@@ -965,14 +1086,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnRunDns) {
           btnRunDns.disabled = true;
           btnRunDns.classList.add('btn-loading');
-          btnRunDns.innerHTML = `<span class="btn-spinner"></span> 查询中...`;
+          btnRunDns.innerHTML = `<span class="btn-spinner"></span> ${i18n.t('dns_running_btn')}`;
         }
 
         try {
           try { sfx.playClick(); } catch(e) {}
           
           const selectedText = providerSelect.selectedOptions[0]?.text || 'DNS';
-          gridContainer.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);font-family:var(--font-mono);">正在通过 ${selectedText} 全量解析 DNS 记录...</div>`;
+          gridContainer.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);font-family:var(--font-mono);">${i18n.t('dns_querying_status', { provider: selectedText })}</div>`;
 
           const res = await queryAllDnsRecords(dom, typeSelect.value, providerSelect.value);
           try { sfx.playSuccess(); } catch(e) {}
@@ -985,12 +1106,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
           if (elTotal) elTotal.textContent = res.totalRecords;
           const ipCount = (res.grouped['A']?.length || 0) + (res.grouped['AAAA']?.length || 0);
-          if (elIp) elIp.textContent = `${ipCount} 个`;
-          if (elMx) elMx.textContent = `${res.grouped['MX']?.length || 0} 个`;
+          if (elIp) elIp.textContent = `${ipCount}`;
+          if (elMx) elMx.textContent = `${res.grouped['MX']?.length || 0}`;
           if (elStatus) elStatus.textContent = 'NOERROR';
 
           if (res.totalRecords === 0) {
-            gridContainer.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);font-family:var(--font-mono);">未查询到任何有效的 ${typeSelect.value} DNS 解析记录</div>`;
+            gridContainer.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);font-family:var(--font-mono);">${i18n.t('dns_no_records', { type: typeSelect.value })}</div>`;
             return;
           }
 
@@ -1001,17 +1122,17 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="dns-type-card">
                 <div class="dns-type-header">
                   <div class="dns-type-title">
-                    <span>📌 ${type} 记录</span>
-                    <span class="dns-type-badge">${records.length} 条</span>
+                    <span>📌 ${type}</span>
+                    <span class="dns-type-badge">${records.length}</span>
                   </div>
                 </div>
                 <table class="dns-record-table">
                   <thead>
                     <tr>
-                      <th style="width:180px;">主机名称 (NAME)</th>
-                      <th style="width:90px;">TTL (秒)</th>
-                      <th>记录值 / 响应数据 (VALUE / CONTENT)</th>
-                      <th style="width:60px;text-align:right;">复制</th>
+                      <th style="width:180px;">${i18n.t('dns_th_name')}</th>
+                      <th style="width:90px;">${i18n.t('dns_th_ttl')}</th>
+                      <th>${i18n.t('dns_th_value')}</th>
+                      <th style="width:60px;text-align:right;">${i18n.t('dns_th_copy')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1021,7 +1142,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td style="color:var(--text-dim);">${r.ttl}s</td>
                         <td style="font-family:var(--font-mono);">${r.data}</td>
                         <td style="text-align:right;">
-                          <button class="dns-copy-btn" data-val="${r.data}" title="复制记录值">📋</button>
+                          <button class="dns-copy-btn" data-val="${r.data}" title="${i18n.t('dns_th_copy')}">📋</button>
                         </td>
                       </tr>
                     `).join('')}
@@ -1035,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.onclick = () => {
               navigator.clipboard.writeText(btn.dataset.val);
               try { sfx.playSuccess(); } catch(e) {}
-              toast.success('DNS 记录已复制');
+              toast.success(i18n.t('dns_copy_toast'));
             };
           });
         } finally {

@@ -16,7 +16,7 @@ export const translations = {
     codec_title: 'Encoder / Crypto', codec_desc: 'Base64, JWT parse, SHA-256 hash',
     time_title: 'Timestamp', time_desc: 'Unix epoch ↔ Local / ISO datetime',
 
-    // UI Buttons & Labels
+    // UI Buttons & Actions
     btn_sample: 'Sample Data',
     btn_copy: 'Copy',
     btn_clear: 'Clear',
@@ -28,6 +28,53 @@ export const translations = {
     btn_now: 'Current Time',
     btn_run_ping: 'Run Ping Test',
     btn_run_dns: 'Query DNS',
+    btn_cancel: 'Cancel',
+    btn_confirm: 'Confirm & Add',
+
+    // IP Tool Translations
+    ip_loading_status: 'Safely probing node IP telemetry & geolocation...',
+    ip_loading_tag_1: '📡 IPv4 / IPv6 Probe',
+    ip_loading_tag_2: '🌍 BGP / ASN Telemetry',
+    ip_loading_tag_3: '🛡️ WebRTC Leak Audit',
+
+    // Ping Tool Translations
+    ping_placeholder: 'Enter IP, domain or URL to test (e.g. google.com / 8.8.8.8)...',
+    ping_add_btn: 'Add Target',
+    ping_filter_all: 'All Nodes',
+    ping_filter_china: 'China Nodes',
+    ping_filter_asia: 'Asia Nodes',
+    ping_filter_west: 'Western Nodes',
+    ping_filter_dev: 'AI & API Dev',
+    ping_running_status: 'Probing latency across global nodes...',
+    ping_completed_status: '✅ Latency probe complete across all nodes',
+    ping_running_btn: 'Testing...',
+    ping_stat_min: 'Best Latency (MIN)',
+    ping_stat_avg: 'Avg Latency (AVG)',
+    ping_stat_fast: 'Fast Nodes (<120ms)',
+    ping_stat_loss: 'Loss / Timeout (LOSS)',
+    ping_timeout: 'Timeout',
+    ping_retest_tooltip: 'Retest this node',
+
+    // DNS Tool Translations
+    dns_placeholder: 'Enter domain name to query (e.g. github.com / google.com)...',
+    dns_add_custom: '➕ Custom',
+    dns_running_btn: 'Querying...',
+    dns_stat_total: 'Total Records (TOTAL)',
+    dns_stat_ip: 'IPv4 / IPv6 (IP)',
+    dns_stat_mx: 'Mail Servers (MX)',
+    dns_stat_rcode: 'Response Code (RCODE)',
+    dns_querying_status: 'Querying DNS records via {provider}...',
+    dns_no_records: 'No valid {type} DNS records found',
+    dns_th_name: 'HOST NAME',
+    dns_th_ttl: 'TTL (sec)',
+    dns_th_value: 'RECORD VALUE / RESPONSE CONTENT',
+    dns_th_copy: 'Copy',
+    dns_copy_toast: 'DNS record copied to clipboard',
+
+    // Modal Translations
+    modal_doh_title: '➕ Add Custom DoH Server',
+    modal_doh_url_label: 'DoH Server Endpoint URL',
+    modal_doh_name_label: 'Display Name (Optional)',
 
     // Status & Toasts
     status_fetching_ip: 'Detecting IP...',
@@ -65,7 +112,55 @@ export const translations = {
     btn_now: '当前时间',
     btn_run_ping: '开始 Ping 测速',
     btn_run_dns: '查询 DNS',
+    btn_cancel: '取消',
+    btn_confirm: '确定添加',
 
+    // IP 模块
+    ip_loading_status: '正在安全探查本节点 IP 遥测与地理位置...',
+    ip_loading_tag_1: '📡 IPv4 / IPv6 探测',
+    ip_loading_tag_2: '🌍 BGP / ASN 归属',
+    ip_loading_tag_3: '🛡️ WebRTC 泄漏审计',
+
+    // Ping 测速模块
+    ping_placeholder: '输入任意 IP、域名或 URL 自定义测速 (例: google.com / 8.8.8.8 / 1.1.1.1)...',
+    ping_add_btn: '添加测速',
+    ping_filter_all: '全部节点 (All)',
+    ping_filter_china: '中国节点 (China)',
+    ping_filter_asia: '亚太节点 (Asia)',
+    ping_filter_west: '欧美节点 (West)',
+    ping_filter_dev: 'AI & API (Dev)',
+    ping_running_status: '正在从本地浏览器发往多节点测速...',
+    ping_completed_status: '✅ 全球节点测速完成 (均由客户端网络发起)',
+    ping_running_btn: '测速进行中...',
+    ping_stat_min: '最佳延迟 (MIN)',
+    ping_stat_avg: '平均延迟 (AVG)',
+    ping_stat_fast: '极速节点 (<120ms)',
+    ping_stat_loss: '丢包/超时 (LOSS)',
+    ping_timeout: '超时 (Timeout)',
+    ping_retest_tooltip: '重新测试此节点',
+
+    // DNS 解析模块
+    dns_placeholder: '输入要查询的域名 (例: github.com / google.com)...',
+    dns_add_custom: '➕ 自定义',
+    dns_running_btn: '查询中...',
+    dns_stat_total: '总解析记录数 (TOTAL)',
+    dns_stat_ip: 'IPv4/v6 地址数 (IP)',
+    dns_stat_mx: '邮件服务器 (MX)',
+    dns_stat_rcode: '响应状态 (RCODE)',
+    dns_querying_status: '正在通过 {provider} 全量解析 DNS 记录...',
+    dns_no_records: '未查询到任何有效的 {type} DNS 解析记录',
+    dns_th_name: '主机名称 (NAME)',
+    dns_th_ttl: 'TTL (秒)',
+    dns_th_value: '记录值 / 响应数据 (VALUE / CONTENT)',
+    dns_th_copy: '复制',
+    dns_copy_toast: 'DNS 记录已复制',
+
+    // 弹窗
+    modal_doh_title: '➕ 添加自定义 DoH 服务器',
+    modal_doh_url_label: 'DoH 服务器 URL',
+    modal_doh_name_label: '服务器显示名称 (可选)',
+
+    // 状态与 Toast
     status_fetching_ip: '正在检测 IP...',
     status_safe: 'WebRTC 安全',
     status_leak: 'WebRTC 泄漏风险',
@@ -74,78 +169,6 @@ export const translations = {
     toast_sample_loaded: '示例数据已加载！',
     toast_formatted: '格式化成功！',
     toast_error: '处理输入出错'
-  },
-  'zh-TW': {
-    tagline: '開發者極速工作台 · 零零碎碎一站搞定',
-    searchPlaceholder: '搜尋所有工具 (⌘K)...',
-    footerText: 'Nexus DevTools · 隱私優先 · 部署於 Vercel',
-    
-    cat_network: '網路診斷',
-    cat_dev: '常用工具',
-
-    ip_title: 'IP 查詢', ip_desc: '本機 IP · 地理位置 · WebRTC 洩漏測試',
-    ping_title: 'Ping 測速', ping_desc: '全球多節點延遲實測',
-    dns_title: 'DNS 查詢', dns_desc: 'A / AAAA / MX / TXT 記錄解析',
-    json_title: 'JSON 工坊', json_desc: '即時格式化 · 壓縮 · 校驗',
-    codec_title: '編解碼/哈希', codec_desc: 'Base64 · JWT 解析 · SHA256',
-    time_title: '時間戳轉換', time_desc: 'Unix 時間戳 ↔ 標準時間',
-
-    btn_sample: '範例資料',
-    btn_copy: '複製',
-    btn_clear: '清空',
-    btn_format: '格式化',
-    btn_minify: '壓縮',
-    btn_encode: 'Base64 編碼',
-    btn_decode: 'Base64 解碼',
-    btn_parse_jwt: '解析 JWT',
-    btn_now: '當前時間',
-    btn_run_ping: '開始 Ping 測速',
-    btn_run_dns: '查詢 DNS',
-
-    status_fetching_ip: '正在檢測 IP...',
-    status_safe: 'WebRTC 安全',
-    status_leak: 'WebRTC 洩漏風險',
-    toast_copied: '已複製到剪貼簿！',
-    toast_cleared: '已清空！',
-    toast_sample_loaded: '範例資料已載入！',
-    toast_formatted: '格式化成功！',
-    toast_error: '處理輸入出錯'
-  },
-  'ja-JP': {
-    tagline: '開発者ワークベンチ · 即時ユーティリティ',
-    searchPlaceholder: 'ツールを検索 (⌘K)...',
-    footerText: 'Nexus DevTools · プライバシー重視 · Vercel デプロイ',
-    
-    cat_network: 'ネットワーク',
-    cat_dev: '開発ツール',
-
-    ip_title: 'IP 照会', ip_desc: 'IP · 位置情報 · WebRTC 漏洩テスト',
-    ping_title: 'Ping 測定', ping_desc: 'グローバルマルチノードレイテンシ',
-    dns_title: 'DNS 照会', dns_desc: 'A / AAAA / MX / TXT レコード',
-    json_title: 'JSON スタジオ', json_desc: 'リアルタイム整形 · 圧縮 · 検証',
-    codec_title: 'エンコーダー/ハッシュ', codec_desc: 'Base64 · JWT 解析 · SHA256',
-    time_title: 'タイムスタンプ', time_desc: 'Unix エポック ↔ 日時',
-
-    btn_sample: 'サンプルデータ',
-    btn_copy: 'コピー',
-    btn_clear: 'クリア',
-    btn_format: '整形',
-    btn_minify: '圧縮',
-    btn_encode: 'Base64 エンコード',
-    btn_decode: 'Base64 デコード',
-    btn_parse_jwt: 'JWT 解析',
-    btn_now: '現在時刻',
-    btn_run_ping: 'Ping テスト実行',
-    btn_run_dns: 'DNS 照会',
-
-    status_fetching_ip: 'IPを検出中...',
-    status_safe: 'WebRTC 安全',
-    status_leak: 'WebRTC 漏洩リスク',
-    toast_copied: 'クリップボードにコピーしました！',
-    toast_cleared: 'クリアしました！',
-    toast_sample_loaded: 'サンプルデータを読み込みました！',
-    toast_formatted: '整形完了！',
-    toast_error: 'エラーが発生しました'
   }
 };
 
@@ -155,9 +178,7 @@ class I18n {
   }
   detect() {
     const n = navigator.language || 'en-US';
-    if (n.startsWith('zh-TW') || n.startsWith('zh-HK')) return 'zh-TW';
     if (n.startsWith('zh')) return 'zh-CN';
-    if (n.startsWith('ja')) return 'ja-JP';
     return 'en-US';
   }
   set(lang) {
@@ -167,8 +188,12 @@ class I18n {
       this.updateDom();
     }
   }
-  t(key) {
-    return (translations[this.currentLang] || translations['en-US'])[key] || translations['en-US'][key] || key;
+  t(key, params = {}) {
+    let str = (translations[this.currentLang] || translations['en-US'])[key] || translations['en-US'][key] || key;
+    Object.keys(params).forEach(p => {
+      str = str.replace(`{${p}}`, params[p]);
+    });
+    return str;
   }
   updateDom() {
     document.querySelectorAll('[data-i18n]').forEach(el => {

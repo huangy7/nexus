@@ -1,4 +1,4 @@
-export async function getClientIpData() {
+export async function getClientIpData(lang = 'zh-CN') {
   let basicData = null;
   
   // Primary: Vercel Edge API
@@ -9,10 +9,12 @@ export async function getClientIpData() {
 
   let targetIp = basicData?.ip && basicData.ip !== '127.0.0.1' ? basicData.ip : '';
 
-  // Fetch Rich Telemetry from ipwho.is
+  // Fetch Rich Telemetry from ipwho.is with dynamic ?lang=
   let richData = null;
+  const langParam = lang.startsWith('zh') ? 'zh-CN' : 'en';
   try {
-    const res = await fetch(targetIp ? `https://ipwho.is/${targetIp}` : 'https://ipwho.is/');
+    const url = targetIp ? `https://ipwho.is/${targetIp}?lang=${langParam}` : `https://ipwho.is/?lang=${langParam}`;
+    const res = await fetch(url);
     const data = await res.json();
     if (data && data.success !== false) {
       richData = data;
