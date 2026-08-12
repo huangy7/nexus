@@ -5,6 +5,7 @@ import { queryAllDnsRecords, RECORD_TYPES, BUILTIN_DNS_SERVERS, getCustomDnsServ
 import { formatJson, minifyJson, processBase64, parseJwt, computeHash, convertTimestamp, SAMPLES } from './modules/dev-tools.js';
 import { escapeJsonString, unescapeJsonString, decodeUnicode, encodeUnicode, parseJsonWithErrorInfo } from './modules/json-util.js';
 import { renderJsonTree, expandAllTreeNodes, collapseAllTreeNodes } from './modules/json-tree.js';
+import { encodeBase64, decodeBase64, encodeUrlComponent, decodeUrlComponent, encodeFullUrl, decodeFullUrl, encodeHtmlEntity, decodeHtmlEntity, computeAllHashes, parseJwtToken } from './modules/codec-util.js';
 import { sfx } from './modules/sfx.js';
 import { i18n } from './modules/i18n.js';
 import { toast } from './modules/toast.js';
@@ -140,11 +141,36 @@ document.addEventListener('DOMContentLoaded', () => {
   const stageActions = document.getElementById('stageActions');
   const stageContent = document.getElementById('stageContent');
 
+  function attachCopyBtn(container, getContentFn, toastMsg = '已复制到剪贴板', label = '📋 复制') {
+    if (!container) return;
+    container.classList.add('copy-overlay-container');
+    let btn = container.querySelector(':scope > .copy-overlay-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.className = 'copy-overlay-btn';
+      container.appendChild(btn);
+    }
+    btn.innerHTML = label;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const text = typeof getContentFn === 'function' ? getContentFn() : getContentFn;
+      if (!text || !text.trim()) return;
+      navigator.clipboard.writeText(text.trim());
+      sfx.playSuccess();
+      toast.success(toastMsg);
+      btn.innerHTML = '✔ 已复制';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.innerHTML = label;
+        btn.classList.remove('copied');
+      }, 1500);
+    };
+  }
+
   function renderToolStage(id) {
     if (id === 'json') {
       stageActions.innerHTML = `
         <button class="btn-tool-action" id="btnJsonSample">📄 ${i18n.t('btn_sample')}</button>
-        <button class="btn-tool-action btn-tool-primary" id="btnJsonCopy">📋 ${i18n.t('btn_copy')}</button>
         <button class="btn-tool-action" id="btnJsonClear">🗑️ ${i18n.t('btn_clear')}</button>
       `;
       stageContent.innerHTML = `
@@ -156,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="pane-action-btn" id="btnJsonEscape" title="JSON 字符串转义">🔤 转义</button>
                 <button class="pane-action-btn" id="btnJsonUnescape" title="反转义 (去除斜杠)">↩️ 解转义</button>
                 <button class="pane-action-btn" id="btnJsonUnicode" title="Unicode 解码 (\\u...)">🌐 Unicode</button>
+                <button class="pane-action-btn" id="btnJsonCopyInput" title="复制源码">📋 复制源码</button>
               </div>
             </div>
             <textarea class="stage-textarea" id="jsonInput" placeholder="Paste or type JSON here..."></textarea>
@@ -168,6 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="pane-action-btn" id="btnJsonCollapseAll" title="折叠所有节点">▶ 折叠</button>
                 <button class="pane-action-btn" id="btnJsonMinify" title="切换压缩单行 / 树图">⚡ 单行</button>
                 <button class="pane-action-btn" id="btnJsonDownload" title="导出下载 JSON 文件">📥 下载</button>
+                <button class="pane-action-btn primary" id="btnJsonCopyOutput" title="复制格式化/压缩 JSON 结果">📋 复制结果</button>
               </div>
             </div>
             <div class="stage-output-box json-tree-container" id="jsonOutput"></div>
@@ -178,6 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const input = document.getElementById('jsonInput');
       const output = document.getElementById('jsonOutput');
       let isMinifiedView = false;
+      let currentJsonData = null;
 
       const renderEmptyBlueprint = () => {
         output.innerHTML = `
@@ -201,12 +230,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const updateJson = () => {
         const val = input.value;
         if (!val.trim()) {
+          currentJsonData = null;
           renderEmptyBlueprint();
           return;
         }
 
         const parsed = parseJsonWithErrorInfo(val);
         if (parsed.success) {
+          currentJsonData = parsed.data;
           output.innerHTML = '';
           if (isMinifiedView) {
             const minifiedStr = JSON.stringify(parsed.data);
@@ -219,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             output.appendChild(treeNode);
           }
         } else {
+          currentJsonData = null;
           output.innerHTML = `
             <div class="json-error-card">
               <div class="json-error-title">❌ 语法错误 (Syntax Error)</div>
@@ -264,6 +296,32 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.success('已解码 Unicode 字符序列');
       };
 
+      document.getElementById('btnJsonCopyInput').onclick = () => {
+        sfx.playClick();
+        const val = input.value.trim();
+        if (val) {
+          navigator.clipboard.writeText(val);
+          sfx.playSuccess();
+          toast.success('已复制 JSON 源码');
+        }
+      };
+
+      document.getElementById('btnJsonCopyOutput').onclick = () => {
+        sfx.playClick();
+        if (currentJsonData !== null) {
+          const jsonText = isMinifiedView 
+            ? JSON.stringify(currentJsonData) 
+            : JSON.stringify(currentJsonData, null, 2);
+          navigator.clipboard.writeText(jsonText);
+          sfx.playSuccess();
+          toast.success('已复制 JSON 结果');
+        } else if (input.value.trim()) {
+          navigator.clipboard.writeText(input.value.trim());
+          sfx.playSuccess();
+          toast.success('已复制 JSON 内容');
+        }
+      };
+
       document.getElementById('btnJsonExpandAll').onclick = () => {
         sfx.playClick();
         expandAllTreeNodes(output);
@@ -291,15 +349,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateJson();
       };
 
-      document.getElementById('btnJsonCopy').onclick = () => {
-        const val = input.value.trim();
-        if (val) {
-          navigator.clipboard.writeText(val);
-          sfx.playSuccess();
-          toast.success(i18n.t('toast_copied'));
-        }
-      };
-
       document.getElementById('btnJsonDownload').onclick = () => {
         const val = input.value.trim();
         if (!val) return;
@@ -324,80 +373,385 @@ document.addEventListener('DOMContentLoaded', () => {
 
     else if (id === 'codec') {
       stageActions.innerHTML = `
-        <button class="btn-tool-action" id="btnCodecSample">${i18n.t('btn_sample')}</button>
-        <button class="btn-tool-action btn-tool-primary" id="btnCodecCopy">${i18n.t('btn_copy')}</button>
-        <button class="btn-tool-action" id="btnCodecClear">${i18n.t('btn_clear')}</button>
+        <button class="btn-tool-action" id="btnCodecSample">📄 ${i18n.t('btn_sample')}</button>
+        <button class="btn-tool-action" id="btnCodecClear">🗑️ ${i18n.t('btn_clear')}</button>
       `;
       stageContent.innerHTML = `
-        <div class="split-editor">
-          <div class="editor-pane">
-            <div class="pane-label"><span>INPUT TEXT / JWT / BASE64</span></div>
-            <textarea class="stage-textarea" id="codecInput" placeholder="Type text or paste JWT/Base64..."></textarea>
-          </div>
-          <div class="editor-pane">
-            <div class="pane-label"><span>LIVE CONVERSION & HASHES</span></div>
-            <div class="stage-output-box" id="codecOutput"></div>
-          </div>
+        <div class="codec-subtabs">
+          <button class="codec-tab-btn active" data-subtab="base64">🔤 Base64 编解码</button>
+          <button class="codec-tab-btn" data-subtab="url">🌐 URL 编解码</button>
+          <button class="codec-tab-btn" data-subtab="html">🎨 HTML 实体</button>
+          <button class="codec-tab-btn" data-subtab="hash">🔐 全算法哈希</button>
+          <button class="codec-tab-btn" data-subtab="jwt">🎖️ JWT 令牌解包</button>
         </div>
+        <div id="codecTabContent"></div>
       `;
 
-      const input = document.getElementById('codecInput');
-      const output = document.getElementById('codecOutput');
+      let activeSubTab = 'base64';
+      let isUrlSafeBase64 = false;
+      let hashUppercase = false;
+      let hashSalt = '';
 
-      const updateCodec = async () => {
-        const val = input.value;
-        if (!val.trim()) {
-          output.textContent = '';
-          return;
+      const renderSubTab = () => {
+        const contentBox = document.getElementById('codecTabContent');
+        if (activeSubTab === 'base64') {
+          contentBox.innerHTML = `
+            <div class="split-editor">
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>INPUT TEXT / BASE64</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn" id="btnB64Encode">编码 Encode</button>
+                    <button class="pane-action-btn" id="btnB64Decode">解码 Decode</button>
+                    <button class="pane-action-btn ${isUrlSafeBase64 ? 'primary' : ''}" id="btnB64UrlSafe">URL-Safe ${isUrlSafeBase64 ? 'ON' : 'OFF'}</button>
+                    <button class="pane-action-btn" id="btnCodecCopyInput">📋 复制源码</button>
+                  </div>
+                </div>
+                <textarea class="stage-textarea" id="codecInput" placeholder="输入明文文本或 Base64 密文..."></textarea>
+              </div>
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>OUTPUT RESULT</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn primary" id="btnCodecCopyOutput">📋 复制结果</button>
+                  </div>
+                </div>
+                <div class="stage-output-box" id="codecOutput"></div>
+              </div>
+            </div>
+          `;
+        } else if (activeSubTab === 'url') {
+          contentBox.innerHTML = `
+            <div class="split-editor">
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>INPUT URL / TEXT</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn" id="btnUrlEncode">编码 Encode</button>
+                    <button class="pane-action-btn" id="btnUrlDecode">解码 Decode</button>
+                    <button class="pane-action-btn" id="btnCodecCopyInput">📋 复制源码</button>
+                  </div>
+                </div>
+                <textarea class="stage-textarea" id="codecInput" placeholder="输入要转义或还原的 URL 字符串..."></textarea>
+              </div>
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>OUTPUT RESULT</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn primary" id="btnCodecCopyOutput">📋 复制结果</button>
+                  </div>
+                </div>
+                <div class="stage-output-box" id="codecOutput"></div>
+              </div>
+            </div>
+          `;
+        } else if (activeSubTab === 'html') {
+          contentBox.innerHTML = `
+            <div class="split-editor">
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>INPUT TEXT / HTML</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn" id="btnHtmlEncode">转义 Entity</button>
+                    <button class="pane-action-btn" id="btnHtmlDecode">还原 Decode</button>
+                    <button class="pane-action-btn" id="btnCodecCopyInput">📋 复制源码</button>
+                  </div>
+                </div>
+                <textarea class="stage-textarea" id="codecInput" placeholder="输入包含 <script>, &, &quot; 等字符的 HTML 文本..."></textarea>
+              </div>
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>OUTPUT RESULT</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn primary" id="btnCodecCopyOutput">📋 复制结果</button>
+                  </div>
+                </div>
+                <div class="stage-output-box" id="codecOutput"></div>
+              </div>
+            </div>
+          `;
+        } else if (activeSubTab === 'hash') {
+          contentBox.innerHTML = `
+            <div class="split-editor">
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>INPUT TEXT</span>
+                  <div class="pane-action-group">
+                    <input type="text" class="stage-input" id="hashSaltInput" placeholder="Salt (加盐, 可选)" style="padding:2px 8px;font-size:0.75rem;width:120px;height:24px;" value="${hashSalt}" />
+                    <button class="pane-action-btn ${hashUppercase ? 'primary' : ''}" id="btnHashCase">${hashUppercase ? 'HEX 大写' : 'hex 小写'}</button>
+                    <button class="pane-action-btn" id="btnCodecCopyInput">📋 复制源码</button>
+                  </div>
+                </div>
+                <textarea class="stage-textarea" id="codecInput" placeholder="输入任意文本，实时计算 MD5, SHA-1, SHA-256, SHA-512 散列值..."></textarea>
+              </div>
+              <div class="editor-pane">
+                <div class="pane-label"><span>MULTI-HASH RESULTS</span></div>
+                <div class="stage-output-box" id="codecOutput"></div>
+              </div>
+            </div>
+          `;
+        } else if (activeSubTab === 'jwt') {
+          contentBox.innerHTML = `
+            <div class="split-editor">
+              <div class="editor-pane">
+                <div class="pane-label">
+                  <span>JWT TOKEN INPUT</span>
+                  <div class="pane-action-group">
+                    <button class="pane-action-btn" id="btnCodecCopyInput">📋 复制源码</button>
+                  </div>
+                </div>
+                <textarea class="stage-textarea" id="codecInput" placeholder="粘贴 JWT 令牌字符串 (ey...)"></textarea>
+              </div>
+              <div class="editor-pane">
+                <div class="pane-label"><span>DECODED PAYLOAD & HEADER</span></div>
+                <div class="stage-output-box" id="codecOutput"></div>
+              </div>
+            </div>
+          `;
         }
 
-        // Try Base64 Enc/Dec, JWT Parse, and SHA-256 simultaneously
-        const b64Enc = processBase64(val, true).result;
-        const b64Dec = processBase64(val, false);
-        const jwtRes = parseJwt(val);
-        const sha256 = (await computeHash(val, 'SHA-256')).hash;
-
-        let outText = `=== BASE64 ENCODE ===\n${b64Enc}\n\n`;
-        if (b64Dec.success) {
-          outText += `=== BASE64 DECODE ===\n${b64Dec.result}\n\n`;
-        }
-        if (jwtRes.success) {
-          outText += `=== JWT PAYLOAD DECODED ===\n${JSON.stringify(jwtRes, null, 2)}\n\n`;
-        }
-        outText += `=== SHA-256 HASH ===\n${sha256}`;
-
-        output.textContent = outText;
+        bindSubTabEvents();
       };
 
-      input.addEventListener('input', updateCodec);
+      const bindSubTabEvents = () => {
+        const input = document.getElementById('codecInput');
+        const output = document.getElementById('codecOutput');
+        if (!input || !output) return;
 
+        const btnCopyInput = document.getElementById('btnCodecCopyInput');
+        if (btnCopyInput) {
+          btnCopyInput.onclick = () => {
+            sfx.playClick();
+            if (input.value.trim()) {
+              navigator.clipboard.writeText(input.value.trim());
+              sfx.playSuccess();
+              toast.success('已复制输入源码');
+            }
+          };
+        }
+
+        const btnCopyOutput = document.getElementById('btnCodecCopyOutput');
+        if (btnCopyOutput) {
+          btnCopyOutput.onclick = () => {
+            sfx.playClick();
+            if (output.textContent.trim()) {
+              navigator.clipboard.writeText(output.textContent.trim());
+              sfx.playSuccess();
+              toast.success('已复制转换结果');
+            }
+          };
+        }
+
+        const updateLive = async () => {
+          const val = input.value;
+          if (!val.trim()) {
+            output.innerHTML = '';
+            return;
+          }
+
+          if (activeSubTab === 'base64') {
+            output.style.whiteSpace = 'pre-wrap';
+            output.textContent = encodeBase64(val, isUrlSafeBase64);
+          } else if (activeSubTab === 'url') {
+            output.style.whiteSpace = 'pre-wrap';
+            output.textContent = encodeUrlComponent(val);
+          } else if (activeSubTab === 'html') {
+            output.style.whiteSpace = 'pre-wrap';
+            output.textContent = encodeHtmlEntity(val);
+          } else if (activeSubTab === 'hash') {
+            output.style.whiteSpace = 'normal';
+            const salt = document.getElementById('hashSaltInput')?.value || '';
+            const hashes = await computeAllHashes(val, salt, hashUppercase);
+            output.innerHTML = `<div class="hash-grid">
+                <div class="hash-card">
+                  <div class="hash-card-header">
+                    <span class="hash-algo-name">MD5 (32位)</span>
+                    <button class="pane-action-btn btn-copy-hash" data-text="${hashes.md5}" data-toast="MD5 哈希已复制">📋 复制</button>
+                  </div>
+                  <div class="hash-val-text">${hashes.md5 || '-'}</div>
+                </div>
+                <div class="hash-card">
+                  <div class="hash-card-header">
+                    <span class="hash-algo-name">SHA-1 (40位)</span>
+                    <button class="pane-action-btn btn-copy-hash" data-text="${hashes.sha1}" data-toast="SHA-1 哈希已复制">📋 复制</button>
+                  </div>
+                  <div class="hash-val-text">${hashes.sha1 || '-'}</div>
+                </div>
+                <div class="hash-card">
+                  <div class="hash-card-header">
+                    <span class="hash-algo-name">SHA-256 (64位)</span>
+                    <button class="pane-action-btn btn-copy-hash" data-text="${hashes.sha256}" data-toast="SHA-256 哈希已复制">📋 复制</button>
+                  </div>
+                  <div class="hash-val-text">${hashes.sha256 || '-'}</div>
+                </div>
+                <div class="hash-card">
+                  <div class="hash-card-header">
+                    <span class="hash-algo-name">SHA-512 (128位)</span>
+                    <button class="pane-action-btn btn-copy-hash" data-text="${hashes.sha512}" data-toast="SHA-512 哈希已复制">📋 复制</button>
+                  </div>
+                  <div class="hash-val-text">${hashes.sha512 || '-'}</div>
+                </div>
+              </div>`;
+          } else if (activeSubTab === 'jwt') {
+            output.style.whiteSpace = 'normal';
+            const res = parseJwtToken(val);
+            if (res.success) {
+              output.innerHTML = `<div class="jwt-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <strong style="color:var(--aurora-cyan);">Header (头部)</strong>
+                    <div>
+                      <span class="jwt-badge-valid">JWT Format</span>
+                      <button class="pane-action-btn btn-copy-hash" data-text='${JSON.stringify(res.header)}' data-toast="Header 已复制" style="margin-left:6px;">📋 复制 Header</button>
+                    </div>
+                  </div>
+                  <pre style="margin:0;font-size:0.83rem;color:var(--aurora-cyan);white-space:pre-wrap;">${JSON.stringify(res.header, null, 2)}</pre>
+                </div>
+                <div class="jwt-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <strong style="color:var(--aurora-emerald);">Payload (载荷)</strong>
+                    <div>
+                      <span class="${res.status === 'expired' ? 'jwt-badge-expired' : 'jwt-badge-valid'}">${res.statusText}</span>
+                      <button class="pane-action-btn btn-copy-hash" data-text='${JSON.stringify(res.payload)}' data-toast="Payload 已复制" style="margin-left:6px;">📋 复制 Payload</button>
+                    </div>
+                  </div>
+                  <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px;">过期时间: ${res.expFormatted}</div>
+                  <pre style="margin:0;font-size:0.83rem;color:var(--aurora-emerald);white-space:pre-wrap;">${JSON.stringify(res.payload, null, 2)}</pre>
+                </div>
+                <div class="jwt-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <strong style="color:var(--aurora-purple);">Signature (签名)</strong>
+                    <button class="pane-action-btn btn-copy-hash" data-text="${res.signature}" data-toast="Signature 已复制">📋 复制</button>
+                  </div>
+                  <div class="hash-val-text" style="font-size:0.78rem;">${res.signature}</div>
+                </div>`;
+            } else {
+              output.innerHTML = `<div class="json-error-card">
+                  <div class="json-error-title">❌ ${res.error}</div>
+                </div>`;
+            }
+          }
+        };
+
+        output.onclick = (e) => {
+          const btn = e.target.closest('.btn-copy-hash');
+          if (!btn) return;
+          const text = btn.getAttribute('data-text');
+          const toastMsg = btn.getAttribute('data-toast') || '已复制';
+          if (text) {
+            navigator.clipboard.writeText(text);
+            sfx.playSuccess();
+            toast.success(toastMsg);
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '✔ 已复制';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.innerHTML = origHtml;
+              btn.classList.remove('copied');
+            }, 1500);
+          }
+        };
+
+        input.addEventListener('input', updateLive);
+
+        // SubTab-specific button bindings
+        if (activeSubTab === 'base64') {
+          document.getElementById('btnB64Encode').onclick = () => {
+            sfx.playClick();
+            output.textContent = encodeBase64(input.value, isUrlSafeBase64);
+            toast.success('Base64 编码完成');
+          };
+          document.getElementById('btnB64Decode').onclick = () => {
+            sfx.playClick();
+            output.textContent = decodeBase64(input.value, isUrlSafeBase64);
+            toast.success('Base64 解码完成');
+          };
+          document.getElementById('btnB64UrlSafe').onclick = () => {
+            sfx.playClick();
+            isUrlSafeBase64 = !isUrlSafeBase64;
+            renderSubTab();
+            toast.info(`URL-Safe Base64: ${isUrlSafeBase64 ? '已开启' : '已关闭'}`);
+          };
+        } else if (activeSubTab === 'url') {
+          document.getElementById('btnUrlEncode').onclick = () => {
+            sfx.playClick();
+            output.textContent = encodeUrlComponent(input.value);
+            toast.success('URL 编码完成');
+          };
+          document.getElementById('btnUrlDecode').onclick = () => {
+            sfx.playClick();
+            output.textContent = decodeUrlComponent(input.value);
+            toast.success('URL 解码完成');
+          };
+        } else if (activeSubTab === 'html') {
+          document.getElementById('btnHtmlEncode').onclick = () => {
+            sfx.playClick();
+            output.textContent = encodeHtmlEntity(input.value);
+            toast.success('HTML 实体编码完成');
+          };
+          document.getElementById('btnHtmlDecode').onclick = () => {
+            sfx.playClick();
+            output.textContent = decodeHtmlEntity(input.value);
+            toast.success('HTML 实体解码完成');
+          };
+        } else if (activeSubTab === 'hash') {
+          const saltInput = document.getElementById('hashSaltInput');
+          if (saltInput) {
+            saltInput.addEventListener('input', (e) => {
+              hashSalt = e.target.value;
+              updateLive();
+            });
+          }
+          document.getElementById('btnHashCase').onclick = () => {
+            sfx.playClick();
+            hashUppercase = !hashUppercase;
+            renderSubTab();
+            toast.info(`哈希字母转换: ${hashUppercase ? 'HEX 大写' : 'hex 小写'}`);
+          };
+        }
+      };
+
+      // Sub-Tab Switching Logic
+      stageContent.querySelectorAll('.codec-tab-btn').forEach(btn => {
+        btn.onclick = () => {
+          sfx.playClick();
+          stageContent.querySelectorAll('.codec-tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeSubTab = btn.getAttribute('data-subtab');
+          renderSubTab();
+        };
+      });
+
+      // Sample Data Button
       document.getElementById('btnCodecSample').onclick = () => {
         sfx.playClick();
-        input.value = SAMPLES.jwt;
-        updateCodec();
+        const input = document.getElementById('codecInput');
+        if (!input) return;
+        if (activeSubTab === 'jwt') input.value = SAMPLES.jwt;
+        else if (activeSubTab === 'base64') input.value = SAMPLES.base64;
+        else input.value = "Nexus DevTools 2026! 🚀";
+        
+        const event = new Event('input');
+        input.dispatchEvent(event);
         toast.info(i18n.t('toast_sample_loaded'));
       };
 
-      document.getElementById('btnCodecCopy').onclick = () => {
-        if (output.textContent) {
-          navigator.clipboard.writeText(output.textContent);
-          sfx.playSuccess();
-          toast.success(i18n.t('toast_copied'));
-        }
-      };
-
+      // Clear Button
       document.getElementById('btnCodecClear').onclick = () => {
         sfx.playClick();
-        input.value = '';
-        updateCodec();
+        const input = document.getElementById('codecInput');
+        const output = document.getElementById('codecOutput');
+        if (input) input.value = '';
+        if (output) output.innerHTML = '';
         toast.info(i18n.t('toast_cleared'));
       };
+
+      // Initial Render of default Sub-Tab (Base64)
+      renderSubTab();
     }
 
     else if (id === 'time') {
       stageActions.innerHTML = `
-        <button class="btn-tool-action btn-tool-primary" id="btnTimeNow">${i18n.t('btn_now')}</button>
-        <button class="btn-tool-action" id="btnTimeCopy">${i18n.t('btn_copy')}</button>
+        <button class="btn-tool-action btn-tool-primary" id="btnTimeNow">⚡ ${i18n.t('btn_now')}</button>
       `;
       stageContent.innerHTML = `
         <div class="split-editor">
@@ -406,7 +760,12 @@ document.addEventListener('DOMContentLoaded', () => {
             <input class="stage-input" id="timeInput" placeholder="Unix timestamp (s/ms) or ISO date string..." value="${Date.now()}" />
           </div>
           <div class="editor-pane">
-            <div class="pane-label"><span>CONVERTED TIME FORMATS</span></div>
+            <div class="pane-label">
+              <span>CONVERTED TIME FORMATS</span>
+              <div class="pane-action-group">
+                <button class="pane-action-btn primary" id="btnTimeCopyOutput">📋 复制结果</button>
+              </div>
+            </div>
             <div class="stage-output-box" id="timeOutput"></div>
           </div>
         </div>
@@ -439,22 +798,20 @@ document.addEventListener('DOMContentLoaded', () => {
         sfx.playClick();
         input.value = Date.now();
         updateTime();
-        toast.info(i18n.t('btn_now'));
+        toast.info('时间已重置为当前时刻');
       };
 
-      document.getElementById('btnTimeCopy').onclick = () => {
+      document.getElementById('btnTimeCopyOutput').onclick = () => {
         if (output.textContent) {
           navigator.clipboard.writeText(output.textContent);
           sfx.playSuccess();
-          toast.success(i18n.t('toast_copied'));
+          toast.success('已复制时间转换结果');
         }
       };
     }
 
     else if (id === 'ip') {
-      stageActions.innerHTML = `
-        <button class="btn-tool-action btn-tool-primary" id="btnIpCopy">${i18n.t('btn_copy')}</button>
-      `;
+      stageActions.innerHTML = ``;
       stageContent.innerHTML = `
         <div id="ipDashboard" style="width:100%;">
           <div class="ip-loading-stage">
