@@ -278,6 +278,9 @@ body {
   min-height: 580px;
   box-shadow: var(--stage-shadow);
   transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .stage-header {
@@ -1914,6 +1917,227 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+
+/* Port Studio High-Craft Cyber Radar Styles */
+.port-control-card {
+  background: var(--card-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-hud);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.port-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.port-preset-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.port-preset-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.port-preset-pill:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-primary);
+  border-color: var(--card-border-hover);
+}
+
+.port-preset-pill.active {
+  background: rgba(0, 240, 255, 0.12);
+  border-color: var(--aurora-cyan);
+  color: var(--aurora-cyan);
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.2);
+}
+
+.port-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 20px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.port-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.port-cat-section {
+  background: var(--card-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.port-cat-header {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.port-cat-header:hover {
+  background: rgba(0, 240, 255, 0.06);
+}
+
+.port-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+
+.port-card {
+  background: var(--editor-input-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.port-card.open {
+  border-color: rgba(0, 255, 157, 0.4);
+  background: rgba(0, 255, 157, 0.04);
+}
+
+.port-card.closed {
+  border-color: rgba(244, 63, 94, 0.2);
+  background: rgba(244, 63, 94, 0.03);
+}
+
+.port-card.filtered {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.port-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.port-number {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--aurora-cyan);
+}
+
+.port-badge-open {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--aurora-emerald);
+  background: rgba(0, 255, 157, 0.12);
+  border: 1px solid rgba(0, 255, 157, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.port-badge-closed {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--aurora-rose);
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.port-badge-filtered {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--aurora-amber);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.port-risk-badge {
+  font-size: 0.7rem;
+  color: var(--aurora-rose);
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.port-desc-text {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Port Encyclopedia Dictionary Grid */
+.port-dict-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  max-width: 100%;
+}
+
+.port-dict-card {
+  background: var(--editor-input-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.port-dict-card:hover {
+  border-color: var(--aurora-cyan);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 240, 255, 0.15);
+}
+
 
 /* Global Timezone Cards Grid */
 .tz-section-title {

@@ -7,6 +7,7 @@ import { escapeJsonString, unescapeJsonString, decodeUnicode, encodeUnicode, par
 import { renderJsonTree, expandAllTreeNodes, collapseAllTreeNodes } from './modules/json-tree.js';
 import { encodeBase64, decodeBase64, encodeUrlComponent, decodeUrlComponent, encodeFullUrl, decodeFullUrl, encodeHtmlEntity, decodeHtmlEntity, computeAllHashes, parseJwtToken } from './modules/codec-util.js';
 import { formatTimestampToAll, parseDateToTimestamps, getGlobalTimezones, getCodeSnippets, formatLocalDate } from './modules/time-util.js';
+import { PORT_DATABASE, parsePortsInput, getPresetPorts, getPortInfo, probePortStatus, searchPortDictionary } from './modules/port-util.js';
 import { sfx } from './modules/sfx.js';
 import { i18n } from './modules/i18n.js';
 import { toast } from './modules/toast.js';
@@ -111,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { id: 'ip',    icon: '📡', title: i18n.t('ip_title'),    desc: i18n.t('ip_desc') },
       { id: 'ping',  icon: '⚡', title: i18n.t('ping_title'),  desc: i18n.t('ping_desc') },
       { id: 'dns',   icon: '🔍', title: i18n.t('dns_title'),   desc: i18n.t('dns_desc') },
+      { id: 'port',  icon: '📡', title: i18n.t('port_title'),  desc: i18n.t('port_desc') },
     ];
   }
 
@@ -1832,6 +1834,257 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       executeDns();
+    }
+
+    else if (id === 'port') {
+      stageActions.innerHTML = `
+        <button class="btn-tool-action btn-tool-primary" id="btnRunPortScan">📡 开始雷达扫描</button>
+      `;
+
+      stageContent.innerHTML = `
+        <div class="port-control-card">
+          <div class="port-input-row">
+            <input class="stage-input" id="portInputHost" placeholder="目标主机 (IP 或域名，如 125.77.141.2 或 example.com)" value="125.77.141.2" style="flex:1;" />
+          </div>
+          <div class="port-input-row">
+            <input class="stage-input" id="portInputPorts" placeholder="自定义要检测的端口 (如 80, 443, 8000-8010, 3306)" value="${getPresetPorts('web').join(', ')}" style="flex:1;" />
+          </div>
+          <div class="port-preset-bar">
+            <button class="port-preset-pill active" data-preset="web">🌐 Web 基础服务 (80, 443, 8080, 8443)</button>
+            <button class="port-preset-pill" data-preset="remote">🖥️ 远程运维 (22, 23, 3389, 21)</button>
+            <button class="port-preset-pill" data-preset="db">🗄️ 数据库集群 (3306, 5432, 6379, 27017)</button>
+            <button class="port-preset-pill" data-preset="mq">📨 消息中间件 (5672, 15672, 9092, 8848)</button>
+            <button class="port-preset-pill" data-preset="highrisk">🛡️ 高危暴露端口 (21, 23, 445, 2375, 6379)</button>
+            <button class="port-preset-pill" data-preset="all">⚡ 全量热门扫描 (全选 40+ 端口)</button>
+          </div>
+        </div>
+
+        <!-- Scan Progress Bar -->
+        <div class="ping-progress-wrap" id="portProgressWrap">
+          <div class="ping-progress-fill" id="portProgressFill"></div>
+        </div>
+
+        <!-- Filter & Control Bar -->
+        <div class="port-filter-bar">
+          <div class="port-filter-group">
+            <button class="ping-filter-btn active" data-filter="all">全部端口</button>
+            <button class="ping-filter-btn" data-filter="open">仅看开放 🟢</button>
+            <button class="ping-filter-btn" data-filter="highrisk">仅看高危 🛡️</button>
+          </div>
+          <span style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-dim);" id="portStatusText">就绪 · 点击按钮开始探测</span>
+        </div>
+
+        <!-- Categorized Foldable Grid -->
+        <div id="portCatSections"></div>
+
+        <!-- Port Knowledge Dictionary -->
+        <div class="tz-section-title" style="margin-top:32px;">📖 常用端口与服务协议百科字典 (Port Knowledge Base)</div>
+        <input class="stage-input" id="portDictSearch" placeholder="🔍 搜索端口号、服务名称或描述 (如 mysql, 22, redis, web...)" style="margin-bottom:12px;" />
+        <div class="port-dict-grid" id="portDictGrid"></div>
+      `;
+
+      const inputHost = document.getElementById('portInputHost');
+      const inputPorts = document.getElementById('portInputPorts');
+      const btnScan = document.getElementById('btnRunPortScan');
+      const statusText = document.getElementById('portStatusText');
+      const progressWrap = document.getElementById('portProgressWrap');
+      const progressFill = document.getElementById('portProgressFill');
+      const catSections = document.getElementById('portCatSections');
+      const dictGrid = document.getElementById('portDictGrid');
+      const dictSearch = document.getElementById('portDictSearch');
+
+      let activeFilter = 'all';
+      let lastProbeResults = [];
+      let isScanning = false;
+
+      // Handle Preset Pills Click
+      document.querySelectorAll('.port-preset-pill').forEach(pill => {
+        pill.onclick = () => {
+          sfx.playClick();
+          document.querySelectorAll('.port-preset-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          const presetKey = pill.dataset.preset;
+          const ports = getPresetPorts(presetKey);
+          inputPorts.value = ports.join(', ');
+          toast.info(`已载入预设端口组 (${ports.length} 个端口)`);
+        };
+      });
+
+      // Filter Buttons Click
+      document.querySelectorAll('.port-filter-bar .ping-filter-btn').forEach(btn => {
+        btn.onclick = () => {
+          sfx.playClick();
+          document.querySelectorAll('.port-filter-bar .ping-filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activeFilter = btn.dataset.filter;
+          renderScanResults(lastProbeResults);
+        };
+      });
+
+      // Render Categories & Cards
+      function renderScanResults(results) {
+        if (!results.length) {
+          catSections.innerHTML = `
+            <div style="text-align:center;padding:40px;color:var(--text-dim);background:var(--card-bg);border-radius:var(--radius-md);border:1px solid var(--glass-border);">
+              📡 输入目标主机与端口，点击“开始雷达扫描”即可发起测试
+            </div>
+          `;
+          return;
+        }
+
+        let filtered = results;
+        if (activeFilter === 'open') {
+          filtered = results.filter(r => r.status === 'open');
+        } else if (activeFilter === 'highrisk') {
+          filtered = results.filter(r => r.isHighRisk);
+        }
+
+        const categoryNames = {
+          web: '🌐 Web 与应用框架服务',
+          remote: '🖥️ 远程连接与运维管理',
+          db: '🗄️ 数据库与缓存服务',
+          mq: '📨 消息队列与微服务组件',
+          cloud: '☁️ 云原生与网络基础协议',
+          custom: '⚙️ 自定义扫描端口'
+        };
+
+        const grouped = {};
+        filtered.forEach(item => {
+          const cat = item.category || 'custom';
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push(item);
+        });
+
+        const html = Object.keys(grouped).map(catKey => {
+          const items = grouped[catKey];
+          const openCount = items.filter(i => i.status === 'open').length;
+          const catTitle = categoryNames[catKey] || catKey.toUpperCase();
+
+          return `
+            <div class="port-cat-section">
+              <div class="port-cat-header">
+                <span>${catTitle} (${items.length} 个端口)</span>
+                <span style="font-size:0.8rem;color:var(--aurora-emerald);">开放 ${openCount} / ${items.length}</span>
+              </div>
+              <div class="port-status-grid">
+                ${items.map(r => `
+                  <div class="port-card ${r.status}">
+                    <div class="port-card-header">
+                      <span class="port-number">${r.port} <span style="font-size:0.75rem;color:var(--text-dim);font-weight:400;">/ ${r.service}</span></span>
+                      <span class="port-badge-${r.status}">${r.status === 'open' ? '🟢 OPEN' : (r.status === 'closed' ? '🔴 CLOSED' : '🟡 FILTERED')}</span>
+                    </div>
+                    <div class="port-desc-text">${r.desc}</div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">
+                      <span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--aurora-cyan);">${r.latency ? r.latency + ' ms' : '超时'}</span>
+                      ${r.isHighRisk ? '<span class="port-risk-badge">🛡️ 高危未加密</span>' : ''}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        catSections.innerHTML = html || `
+          <div style="text-align:center;padding:30px;color:var(--text-dim);">
+            未找到符合筛选条件 (${activeFilter}) 的端口结果
+          </div>
+        `;
+      }
+
+      // Execute Port Scanner
+      async function runPortScan() {
+        if (isScanning) return;
+        const host = inputHost.value.trim();
+        const portsStr = inputPorts.value.trim();
+        if (!host) {
+          toast.info('请先输入目标主机 IP 或域名');
+          inputHost.focus();
+          return;
+        }
+
+        const ports = parsePortsInput(portsStr);
+        if (!ports.length) {
+          toast.error('无效的端口输入，请输入合法端口 (1-65535)');
+          inputPorts.focus();
+          return;
+        }
+
+        isScanning = true;
+        btnScan.disabled = true;
+        btnScan.classList.add('btn-loading');
+        btnScan.textContent = '📡 雷达扫描中...';
+        progressWrap.classList.add('show');
+        progressFill.style.width = '0%';
+        statusText.textContent = `扫描中 0 / ${ports.length}...`;
+
+        lastProbeResults = [];
+        try { sfx.playClick(); } catch(e) {}
+
+        for (let i = 0; i < ports.length; i++) {
+          const port = ports[i];
+          statusText.textContent = `正探测 ${host}:${port} (${i + 1}/${ports.length})...`;
+          const res = await probePortStatus(host, port);
+          lastProbeResults.push(res);
+          renderScanResults(lastProbeResults);
+
+          const percent = Math.round(((i + 1) / ports.length) * 100);
+          progressFill.style.width = `${percent}%`;
+        }
+
+        const openCount = lastProbeResults.filter(r => r.status === 'open').length;
+        statusText.textContent = `扫描完成！检测到 ${openCount} 个开放端口`;
+        sfx.playSuccess();
+        toast.success(`端口雷达扫描完成！发现 ${openCount} 个开放端口`);
+
+        setTimeout(() => progressWrap.classList.remove('show'), 1500);
+        isScanning = false;
+        btnScan.disabled = false;
+        btnScan.classList.remove('btn-loading');
+        btnScan.textContent = '📡 开始雷达扫描';
+      }
+
+      btnScan.onclick = runPortScan;
+      inputHost.onkeydown = (e) => { if (e.key === 'Enter') runPortScan(); };
+      inputPorts.onkeydown = (e) => { if (e.key === 'Enter') runPortScan(); };
+
+      // Render Port Dictionary Grid
+      function renderDictionary(keyword = '') {
+        const catalog = searchPortDictionary(keyword);
+        dictGrid.innerHTML = catalog.map(item => `
+          <div class="port-dict-card" data-port="${item.port}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-family:var(--font-mono);font-weight:800;color:var(--aurora-cyan);">${item.port} / ${item.service}</span>
+              ${item.isHighRisk ? '<span class="port-risk-badge">🛡️ 高危</span>' : `<span style="font-size:0.7rem;color:var(--text-dim);">${item.category.toUpperCase()}</span>`}
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-secondary);">${item.desc}</div>
+            <div style="font-size:0.72rem;color:var(--aurora-emerald);margin-top:6px;">+ 点击添加至检测列表</div>
+          </div>
+        `).join('');
+
+        dictGrid.querySelectorAll('.port-dict-card').forEach(card => {
+          card.onclick = () => {
+            sfx.playClick();
+            const port = card.dataset.port;
+            const currentPorts = parsePortsInput(inputPorts.value);
+            if (!currentPorts.includes(Number(port))) {
+              currentPorts.push(Number(port));
+              inputPorts.value = currentPorts.join(', ');
+              toast.success(`已添加端口 ${port} 到探测列表中！`);
+            } else {
+              toast.info(`端口 ${port} 已在列表中`);
+            }
+          };
+        });
+      }
+
+      dictSearch.addEventListener('input', (e) => {
+        renderDictionary(e.target.value);
+      });
+
+      // Initial execution
+      renderScanResults([]);
+      renderDictionary();
     }
   }
 
