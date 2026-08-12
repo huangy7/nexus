@@ -6,6 +6,7 @@ import { formatJson, minifyJson, processBase64, parseJwt, computeHash, convertTi
 import { escapeJsonString, unescapeJsonString, decodeUnicode, encodeUnicode, parseJsonWithErrorInfo } from './modules/json-util.js';
 import { renderJsonTree, expandAllTreeNodes, collapseAllTreeNodes } from './modules/json-tree.js';
 import { encodeBase64, decodeBase64, encodeUrlComponent, decodeUrlComponent, encodeFullUrl, decodeFullUrl, encodeHtmlEntity, decodeHtmlEntity, computeAllHashes, parseJwtToken } from './modules/codec-util.js';
+import { formatTimestampToAll, parseDateToTimestamps, getGlobalTimezones, getCodeSnippets, formatLocalDate } from './modules/time-util.js';
 import { sfx } from './modules/sfx.js';
 import { i18n } from './modules/i18n.js';
 import { toast } from './modules/toast.js';
@@ -140,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ====== Render Main Stage Content ======
   const stageActions = document.getElementById('stageActions');
   const stageContent = document.getElementById('stageContent');
+  let activeClockInterval = null;
 
   function attachCopyBtn(container, getContentFn, toastMsg = '已复制到剪贴板', label = '📋 复制') {
     if (!container) return;
@@ -168,6 +170,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderToolStage(id) {
+    if (activeClockInterval) {
+      clearInterval(activeClockInterval);
+      activeClockInterval = null;
+    }
+
     if (id === 'json') {
       stageActions.innerHTML = `
         <button class="btn-tool-action" id="btnJsonSample">📄 ${i18n.t('btn_sample')}</button>
@@ -751,63 +758,329 @@ document.addEventListener('DOMContentLoaded', () => {
 
     else if (id === 'time') {
       stageActions.innerHTML = `
-        <button class="btn-tool-action btn-tool-primary" id="btnTimeNow">⚡ ${i18n.t('btn_now')}</button>
+        <button class="btn-tool-action btn-tool-primary" id="btnTimeNow">⚡ 恢复实时追踪</button>
       `;
+
+      let clockPaused = false;
+      let isUserEditing = false;
+      let clockInterval = null;
+
       stageContent.innerHTML = `
-        <div class="split-editor">
-          <div class="editor-pane">
-            <div class="pane-label"><span>INPUT TIMESTAMP OR DATE STRING</span></div>
-            <input class="stage-input" id="timeInput" placeholder="Unix timestamp (s/ms) or ISO date string..." value="${Date.now()}" />
-          </div>
-          <div class="editor-pane">
-            <div class="pane-label">
-              <span>CONVERTED TIME FORMATS</span>
-              <div class="pane-action-group">
-                <button class="pane-action-btn primary" id="btnTimeCopyOutput">📋 复制结果</button>
+        <div class="cyber-watch-container">
+          <div class="digital-lcd-screen">
+            <div style="display:flex;align-items:center;gap:20px;">
+              <div class="lcd-main-time" id="lcdClock">00<span class="lcd-pulse-dot">:</span>00<span class="lcd-pulse-dot">:</span>00</div>
+              <div class="watch-live-badge" id="watchBadge">
+                <div class="watch-live-dot"></div>
+                <span id="watchStatusText">LIVE 实时运行</span>
               </div>
             </div>
-            <div class="stage-output-box" id="timeOutput"></div>
+            <div class="lcd-sub-group">
+              <div class="lcd-sub-item">
+                <span class="lcd-sub-label">UNIX TIMESTAMP (S)</span>
+                <span class="lcd-sub-val" id="clockSec">0000000000</span>
+              </div>
+              <div class="lcd-sub-item">
+                <span class="lcd-sub-label">MILLISECONDS (MS)</span>
+                <span class="lcd-sub-val" id="clockMs" style="color:var(--aurora-purple);">0000000000000</span>
+              </div>
+            </div>
+          </div>
+          <div class="watch-actions-bar">
+            <div style="font-size:0.78rem;color:var(--text-dim);" id="watchEditTip">🟢 正在按秒实时追踪当前时间</div>
+            <div class="time-clock-actions">
+              <button class="pane-action-btn" id="btnClockPause">⏸️ 暂停时钟</button>
+              <button class="pane-action-btn" id="btnClockCopySec">📋 复制秒</button>
+              <button class="pane-action-btn" id="btnClockCopyMs">📋 复制毫秒</button>
+            </div>
           </div>
         </div>
+
+        <div class="split-editor">
+          <div class="editor-pane">
+            <div class="pane-label">
+              <span>TIMESTAMP ➔ DATE (时间戳转日期)</span>
+              <div class="pane-action-group">
+                <button class="pane-action-btn" id="btnTsCopyInput">📋 复制源码</button>
+              </div>
+            </div>
+            <input class="stage-input" id="tsInput" placeholder="输入10/13/16/19位时间戳 (如 1786517926)" value="${Math.floor(Date.now() / 1000)}" style="margin-bottom:12px;" />
+            <div class="stage-output-box" id="tsOutput"></div>
+          </div>
+
+          <div class="editor-pane">
+            <div class="pane-label">
+              <span>DATE ➔ TIMESTAMP (日期转时间戳)</span>
+              <div class="pane-action-group">
+                <button class="pane-action-btn primary" id="btnDateCopyOutput">📋 复制结果</button>
+              </div>
+            </div>
+            <input class="stage-input" id="dateInput" placeholder="YYYY-MM-DD HH:mm:ss (如 ${formatLocalDate(new Date())})" value="${formatLocalDate(new Date())}" style="margin-bottom:12px;" />
+            <div class="stage-output-box" id="dateOutput"></div>
+          </div>
+        </div>
+
+        <!-- Global Timezone Grid -->
+        <div class="tz-section-title">🌐 全球主要时区对照 (Global Timezones)</div>
+        <div class="tz-grid" id="tzGrid"></div>
+
+        <!-- Code Snippets Cheat Sheet -->
+        <div class="tz-section-title">💻 多语言获取时间戳代码速查 (Code Cheat Sheet)</div>
+        <div class="code-grid" id="codeGrid"></div>
       `;
 
-      const input = document.getElementById('timeInput');
-      const output = document.getElementById('timeOutput');
+      const clockSec = document.getElementById('clockSec');
+      const clockMs = document.getElementById('clockMs');
+      const lcdClock = document.getElementById('lcdClock');
+      const watchBadge = document.getElementById('watchBadge');
+      const watchStatusText = document.getElementById('watchStatusText');
+      const watchEditTip = document.getElementById('watchEditTip');
+      const btnPause = document.getElementById('btnClockPause');
+      const tsInput = document.getElementById('tsInput');
+      const tsOutput = document.getElementById('tsOutput');
+      const dateInput = document.getElementById('dateInput');
+      const dateOutput = document.getElementById('dateOutput');
 
-      const updateTime = () => {
-        const res = convertTimestamp(input.value);
+      // Helper Functions with standard function declarations (hoisted)
+      function renderGlobalTimezones(dateObj = new Date()) {
+        const tzGrid = document.getElementById('tzGrid');
+        if (!tzGrid) return;
+        const tzs = getGlobalTimezones(dateObj);
+        tzGrid.innerHTML = tzs.map(tz => `
+          <div class="tz-card">
+            <div class="tz-card-header">
+              <span class="tz-name">${tz.name}</span>
+              <span class="tz-badge">${tz.badge}</span>
+            </div>
+            <div class="tz-time-text">${tz.formatted}</div>
+          </div>
+        `).join('');
+      }
+
+      function renderCodeSnippets() {
+        const codeGrid = document.getElementById('codeGrid');
+        if (!codeGrid) return;
+        const snippets = getCodeSnippets();
+        codeGrid.innerHTML = snippets.map(s => `
+          <div class="code-card">
+            <div class="code-card-header">
+              <span class="code-lang-tag">${s.lang}</span>
+              <button class="pane-action-btn btn-copy-hash" data-text="${s.code.replace(/"/g, '&quot;')}" data-toast="${s.lang} 代码已复制">📋 复制</button>
+            </div>
+            <div class="code-block">${s.code}</div>
+          </div>
+        `).join('');
+      }
+
+      function formatLcdTime(date) {
+        const pad = (n) => String(n).padStart(2, '0');
+        const hh = pad(date.getHours());
+        const mm = pad(date.getMinutes());
+        const ss = pad(date.getSeconds());
+        return `${hh}<span class="lcd-pulse-dot">:</span>${mm}<span class="lcd-pulse-dot">:</span>${ss}`;
+      }
+
+      function updateTsToDate() {
+        const val = tsInput.value.trim();
+        if (!val) {
+          tsOutput.innerHTML = '';
+          return;
+        }
+        const res = formatTimestampToAll(val);
         if (res.success) {
-          output.textContent = [
-            `Unix (Sec):  ${res.unixSec}`,
-            `Unix (Ms):   ${res.unixMs}`,
-            `ISO 8601:    ${res.iso}`,
-            `Local Time:  ${res.local}`,
-            `UTC Time:    ${res.utc}`
-          ].join('\n');
-          output.classList.remove('error');
+          tsOutput.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div><strong style="color:var(--aurora-purple);">自动识别单位:</strong> <span class="json-badge" style="display:inline-block;">${res.unit}</span></div>
+              <div><strong style="color:var(--aurora-cyan);">本地时间 (Local):</strong> <span style="font-family:var(--font-mono);font-size:1.05rem;color:var(--aurora-emerald);font-weight:700;">${res.local}</span></div>
+              <div><strong style="color:var(--aurora-cyan);">相对时间 (Relative):</strong> <span style="color:var(--aurora-amber);font-weight:600;">${res.relative}</span></div>
+              <div><strong style="color:var(--text-muted);">ISO 8601:</strong> <code>${res.iso}</code></div>
+              <div><strong style="color:var(--text-muted);">UTC 时间:</strong> <code>${res.utc}</code></div>
+            </div>
+          `;
+          renderGlobalTimezones(res.dateObj);
         } else {
-          output.textContent = `❌ ${res.error}`;
-          output.classList.add('error');
+          tsOutput.innerHTML = `<div class="json-error-card"><div class="json-error-title">❌ ${res.error}</div></div>`;
+        }
+      }
+
+      function updateDateToTs() {
+        const val = dateInput.value.trim();
+        if (!val) {
+          dateOutput.innerHTML = '';
+          return;
+        }
+        const res = parseDateToTimestamps(val);
+        if (res.success) {
+          dateOutput.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div class="hash-card">
+                <div class="hash-card-header">
+                  <span class="hash-algo-name">Unix 时间戳 (10位 / 秒 s)</span>
+                  <button class="pane-action-btn btn-copy-hash" data-text="${res.unixSec}" data-toast="秒级时间戳已复制">📋 复制</button>
+                </div>
+                <div class="hash-val-text">${res.unixSec}</div>
+              </div>
+              <div class="hash-card">
+                <div class="hash-card-header">
+                  <span class="hash-algo-name">Unix 时间戳 (13位 / 毫秒 ms)</span>
+                  <button class="pane-action-btn btn-copy-hash" data-text="${res.unixMs}" data-toast="毫秒级时间戳已复制">📋 复制</button>
+                </div>
+                <div class="hash-val-text">${res.unixMs}</div>
+              </div>
+            </div>
+          `;
+        } else {
+          dateOutput.innerHTML = `<div class="json-error-card"><div class="json-error-title">❌ ${res.error}</div></div>`;
+        }
+      }
+
+      const updateLiveClock = () => {
+        if (clockPaused) return;
+        const now = new Date();
+        const nowMs = now.getTime();
+        const nowSec = Math.floor(nowMs / 1000);
+
+        if (clockSec) clockSec.textContent = nowSec;
+        if (clockMs) clockMs.textContent = nowMs;
+        if (lcdClock) lcdClock.innerHTML = formatLcdTime(now);
+
+        if (!isUserEditing) {
+          if (document.activeElement !== tsInput) {
+            tsInput.value = nowSec;
+            updateTsToDate();
+          }
+          if (document.activeElement !== dateInput) {
+            dateInput.value = formatLocalDate(now);
+            updateDateToTs();
+          }
         }
       };
 
-      input.addEventListener('input', updateTime);
-      updateTime();
+      updateLiveClock();
+      activeClockInterval = setInterval(updateLiveClock, 1000);
 
+      btnPause.onclick = () => {
+        sfx.playClick();
+        clockPaused = !clockPaused;
+        if (clockPaused) {
+          btnPause.textContent = '▶️ 恢复时钟';
+          watchBadge.classList.add('paused');
+          watchStatusText.textContent = 'PAUSED 暂停中';
+          watchEditTip.textContent = '⏸️ 时钟已暂停跳动';
+          toast.info('数字时钟已暂停');
+        } else {
+          btnPause.textContent = '⏸️ 暂停时钟';
+          watchBadge.classList.remove('paused');
+          watchStatusText.textContent = 'LIVE 实时运行';
+          watchEditTip.textContent = isUserEditing ? '⚠️ 当前正在查看自定义时间' : '🟢 正在按秒实时追踪当前时间';
+          toast.info('数字时钟已恢复运行');
+        }
+      };
+
+      document.getElementById('btnClockCopySec').onclick = () => {
+        sfx.playSuccess();
+        navigator.clipboard.writeText(clockSec.textContent);
+        toast.success('已复制当前 Unix 时间戳 (秒)');
+      };
+
+      document.getElementById('btnClockCopyMs').onclick = () => {
+        sfx.playSuccess();
+        navigator.clipboard.writeText(clockMs.textContent);
+        toast.success('已复制当前 Unix 时间戳 (毫秒)');
+      };
+
+      tsInput.addEventListener('input', () => {
+        isUserEditing = true;
+        watchEditTip.textContent = '⚠️ 当前正查看自定义时间 (点击上条“⚡ 恢复实时追踪”重置)';
+        updateTsToDate();
+      });
+
+      document.getElementById('btnTsCopyInput').onclick = () => {
+        sfx.playClick();
+        if (tsInput.value.trim()) {
+          navigator.clipboard.writeText(tsInput.value.trim());
+          sfx.playSuccess();
+          toast.success('已复制时间戳源码');
+        }
+      };
+
+      dateInput.addEventListener('input', () => {
+        isUserEditing = true;
+        watchEditTip.textContent = '⚠️ 当前正查看自定义时间 (点击上条“⚡ 恢复实时追踪”重置)';
+        updateDateToTs();
+      });
+
+      document.getElementById('btnDateCopyOutput').onclick = () => {
+        sfx.playClick();
+        if (dateOutput.textContent.trim()) {
+          navigator.clipboard.writeText(dateOutput.textContent.trim());
+          sfx.playSuccess();
+          toast.success('已复制日期转换结果');
+        }
+      };
+
+      dateOutput.onclick = (e) => {
+        const btn = e.target.closest('.btn-copy-hash');
+        if (!btn) return;
+        const text = btn.getAttribute('data-text');
+        const toastMsg = btn.getAttribute('data-toast') || '已复制';
+        if (text) {
+          navigator.clipboard.writeText(text);
+          sfx.playSuccess();
+          toast.success(toastMsg);
+          const origHtml = btn.innerHTML;
+          btn.innerHTML = '✔ 已复制';
+          btn.classList.add('copied');
+          setTimeout(() => {
+            btn.innerHTML = origHtml;
+            btn.classList.remove('copied');
+          }, 1500);
+        }
+      };
+
+      // Fill Now & Resume Live Ticking Button
       document.getElementById('btnTimeNow').onclick = () => {
         sfx.playClick();
-        input.value = Date.now();
-        updateTime();
-        toast.info('时间已重置为当前时刻');
+        isUserEditing = false;
+        clockPaused = false;
+        btnPause.textContent = '⏸️ 暂停时钟';
+        watchBadge.classList.remove('paused');
+        watchStatusText.textContent = 'LIVE 实时运行';
+        watchEditTip.textContent = '🟢 正在按秒实时追踪当前时间';
+        
+        const now = new Date();
+        tsInput.value = Math.floor(now.getTime() / 1000);
+        dateInput.value = formatLocalDate(now);
+        updateTsToDate();
+        updateDateToTs();
+        toast.success('已重置并恢复实时时间追踪！');
       };
 
-      document.getElementById('btnTimeCopyOutput').onclick = () => {
-        if (output.textContent) {
-          navigator.clipboard.writeText(output.textContent);
+
+
+      codeGrid.onclick = (e) => {
+        const btn = e.target.closest('.btn-copy-hash');
+        if (!btn) return;
+        const text = btn.getAttribute('data-text');
+        const toastMsg = btn.getAttribute('data-toast') || '代码已复制';
+        if (text) {
+          navigator.clipboard.writeText(text);
           sfx.playSuccess();
-          toast.success('已复制时间转换结果');
+          toast.success(toastMsg);
+          const origHtml = btn.innerHTML;
+          btn.innerHTML = '✔ 已复制';
+          btn.classList.add('copied');
+          setTimeout(() => {
+            btn.innerHTML = origHtml;
+            btn.classList.remove('copied');
+          }, 1500);
         }
       };
+
+      // Initial execution
+      updateTsToDate();
+      updateDateToTs();
+      renderCodeSnippets();
     }
 
     else if (id === 'ip') {
@@ -1060,14 +1333,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
       loadDetailedIp();
 
-      document.getElementById('btnIpCopy').onclick = () => {
-        if (cachedIpData) {
-          const rawText = JSON.stringify(cachedIpData, null, 2);
-          navigator.clipboard.writeText(rawText);
-          sfx.playSuccess();
-          toast.success(i18n.t('toast_copied'));
-        }
-      };
+      const btnIpCopy = document.getElementById('btnIpCopy');
+      if (btnIpCopy) {
+        btnIpCopy.onclick = () => {
+          if (cachedIpData) {
+            const rawText = JSON.stringify(cachedIpData, null, 2);
+            navigator.clipboard.writeText(rawText);
+            sfx.playSuccess();
+            toast.success(i18n.t('toast_copied'));
+          }
+        };
+      }
     }
 
     else if (id === 'ping') {
