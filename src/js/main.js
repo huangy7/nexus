@@ -1,6 +1,6 @@
 import { getClientIpData, checkWebRtcLeak } from './modules/ip-detector.js';
 import { runGlobalPingSuite, PING_NODES, createCustomNode, runNodePing } from './modules/ping-tester.js';
-import { queryDnsRecords } from './modules/dns-inspector.js';
+import { queryAllDnsRecords, RECORD_TYPES, BUILTIN_DNS_SERVERS, getCustomDnsServers, saveCustomDnsServers, createCustomDnsServer } from './modules/dns-inspector.js';
 import { formatJson, minifyJson, processBase64, parseJwt, computeHash, convertTimestamp, SAMPLES } from './modules/dev-tools.js';
 import { sfx } from './modules/sfx.js';
 import { i18n } from './modules/i18n.js';
@@ -347,7 +347,62 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
       stageContent.innerHTML = `
         <div id="ipDashboard" style="width:100%;">
-          <p style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-dim);">Loading IP telemetry & security audit...</p>
+          <div class="ip-loading-stage">
+            <!-- Top Radar Orbital Scanner -->
+            <div class="ip-loading-scanner">
+              <div class="ip-radar-orbit">
+                <div class="ip-radar-ring ring-1"></div>
+                <div class="ip-radar-ring ring-2"></div>
+                <div class="ip-radar-core">🛰️</div>
+              </div>
+              <div class="ip-loading-text-wrap">
+                <div class="ip-loading-title">正在安全探查本节点 IP 遥测与地理位置...</div>
+                <div class="ip-loading-badges">
+                  <span class="ip-loading-tag">📡 IPv4 / IPv6 探测</span>
+                  <span class="ip-loading-tag">🌍 BGP / ASN 归属</span>
+                  <span class="ip-loading-tag">🛡️ WebRTC 泄漏审计</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Skeleton Preview Cards Grid -->
+            <div class="ip-skeleton-grid">
+              <div class="ip-skeleton-card">
+                <div class="ip-sk-header"><div class="ip-sk-circle"></div><div class="ip-sk-line title"></div></div>
+                <div class="ip-sk-body">
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w70"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w50"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w80"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w60"></div></div>
+                </div>
+              </div>
+              <div class="ip-skeleton-card">
+                <div class="ip-sk-header"><div class="ip-sk-circle"></div><div class="ip-sk-line title"></div></div>
+                <div class="ip-sk-body">
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w60"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w75"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w45"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w65"></div></div>
+                </div>
+              </div>
+              <div class="ip-skeleton-card">
+                <div class="ip-sk-header"><div class="ip-sk-circle"></div><div class="ip-sk-line title"></div></div>
+                <div class="ip-sk-body">
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w50"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w65"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w40"></div></div>
+                </div>
+              </div>
+              <div class="ip-skeleton-card">
+                <div class="ip-sk-header"><div class="ip-sk-circle"></div><div class="ip-sk-line title"></div></div>
+                <div class="ip-sk-body">
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w70"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w60"></div></div>
+                  <div class="ip-sk-row"><div class="ip-sk-line label"></div><div class="ip-sk-line val w55"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       `;
 
@@ -543,10 +598,14 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
       stageContent.innerHTML = `
         <div class="ping-dash-container">
-          <!-- Custom Address Probe Input Bar -->
-          <div style="display:flex;gap:10px;width:100%;">
-            <input class="stage-input" id="customPingInput" placeholder="输入任意 IP、域名或 URL 自定义测速 (例: google.com / 8.8.8.8 / 1.1.1.1)..." style="margin-bottom:0;" />
-            <button class="ws-btn" id="btnAddCustomPing" style="white-space:nowrap;padding:0 20px;">➕ 测速该目标</button>
+          <!-- Integrated Capsule Command Bar -->
+          <div class="ping-input-bar">
+            <span class="ping-input-icon">🎯</span>
+            <input class="ping-input-field" id="customPingInput" placeholder="输入任意 IP、域名或 URL 自定义测速 (例: google.com / 8.8.8.8 / 1.1.1.1)..." />
+            <button class="ping-input-submit" id="btnAddCustomPing">
+              <span>添加测速</span>
+              <kbd>↵</kbd>
+            </button>
           </div>
 
           <!-- Filter & Control Bar -->
@@ -714,66 +773,103 @@ document.addEventListener('DOMContentLoaded', () => {
         bindCardActionButtons();
       };
 
+      let isPingRunning = false;
+
       const startPingSuite = async () => {
-        renderInitialCards();
-        const activeNodes = getActiveNodes();
-        progressWrap.classList.add('show');
-        progressFill.style.width = '0%';
-        statusText.textContent = '正在从本地浏览器发往多节点测速...';
+        if (isPingRunning) return;
+        isPingRunning = true;
 
-        const completedResults = [];
+        const btnRunPing = document.getElementById('btnRunPing');
+        if (btnRunPing) {
+          btnRunPing.disabled = true;
+          btnRunPing.classList.add('btn-loading');
+          btnRunPing.innerHTML = `<span class="btn-spinner"></span> 测速进行中...`;
+        }
 
-        await runGlobalPingSuite(activeNodes, (res, current, total) => {
-          completedResults.push(res);
-          const percent = Math.round((current / total) * 100);
-          progressFill.style.width = `${percent}%`;
+        try {
+          renderInitialCards();
+          const activeNodes = getActiveNodes();
+          progressWrap.classList.add('show');
+          progressFill.style.width = '0%';
+          statusText.textContent = '正在从本地浏览器发往多节点测速...';
 
-          // Update individual card
-          const card = document.getElementById(`ping-card-${res.id}`);
-          if (card) {
-            const avgStr = res.status === 'ok' ? `${res.avg} ms` : '超时 (Timeout)';
-            const gradeClass = res.grade;
-            card.querySelector('.ping-node-metrics').innerHTML = `
-              <div style="display:flex;align-items:center;gap:8px;">
-                <div class="ping-avg-ms ${gradeClass}">${avgStr}</div>
-                <button class="ping-retest-btn" data-id="${res.id}" title="重新测试此节点">🔄</button>
-              </div>
-              <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--text-dim);font-family:var(--font-mono);">MIN ${res.min}ms · MAX ${res.max}ms · LOSS ${res.loss}%</div>
-            `;
-            bindCardActionButtons();
+          const completedResults = [];
+
+          await runGlobalPingSuite(activeNodes, (res, current, total) => {
+            completedResults.push(res);
+            const percent = Math.round((current / total) * 100);
+            progressFill.style.width = `${percent}%`;
+
+            // Update individual card
+            const card = document.getElementById(`ping-card-${res.id}`);
+            if (card) {
+              const avgStr = res.status === 'ok' ? `${res.avg} ms` : '超时 (Timeout)';
+              const gradeClass = res.grade;
+              card.querySelector('.ping-node-metrics').innerHTML = `
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="ping-avg-ms ${gradeClass}">${avgStr}</div>
+                  <button class="ping-retest-btn" data-id="${res.id}" title="重新测试此节点">🔄</button>
+                </div>
+                <div class="ping-node-submeta" style="font-size:0.72rem;color:var(--text-dim);font-family:var(--font-mono);">MIN ${res.min}ms · MAX ${res.max}ms · LOSS ${res.loss}%</div>
+              `;
+              bindCardActionButtons();
+            }
+
+            // Update Summary Stats
+            const validAvgs = completedResults.filter(r => r.status === 'ok').map(r => r.avg);
+            const mins = completedResults.filter(r => r.status === 'ok').map(r => r.min);
+            const fastCount = completedResults.filter(r => r.status === 'ok' && r.avg < 120).length;
+
+            if (mins.length) {
+              const elMin = document.getElementById('statPingMin');
+              const elAvg = document.getElementById('statPingAvg');
+              const elFast = document.getElementById('statPingFast');
+              const elLoss = document.getElementById('statPingLoss');
+
+              if (elMin) elMin.textContent = `${Math.min(...mins)} ms`;
+              if (elAvg) {
+                const avgSum = validAvgs.reduce((a, b) => a + b, 0);
+                elAvg.textContent = `${Math.round(avgSum / validAvgs.length)} ms`;
+              }
+              if (elFast) elFast.textContent = `${fastCount} / ${completedResults.length}`;
+              if (elLoss) {
+                const totalLoss = completedResults.reduce((a, b) => a + b.loss, 0);
+                elLoss.textContent = `${Math.round(totalLoss / completedResults.length)}%`;
+              }
+            }
+          });
+
+          sfx.playSuccess();
+          if (statusText) statusText.textContent = '✅ 全球节点测速完成 (均由客户端网络发起)';
+          if (progressWrap) setTimeout(() => progressWrap.classList.remove('show'), 1500);
+        } finally {
+          isPingRunning = false;
+          if (btnRunPing) {
+            btnRunPing.disabled = false;
+            btnRunPing.classList.remove('btn-loading');
+            btnRunPing.innerHTML = i18n.t('btn_run_ping');
           }
-
-          // Update Summary Stats
-          const validAvgs = completedResults.filter(r => r.status === 'ok').map(r => r.avg);
-          const mins = completedResults.filter(r => r.status === 'ok').map(r => r.min);
-          const fastCount = completedResults.filter(r => r.status === 'ok' && r.avg < 120).length;
-
-          if (mins.length) {
-            document.getElementById('statPingMin').textContent = `${Math.min(...mins)} ms`;
-            const avgSum = validAvgs.reduce((a, b) => a + b, 0);
-            document.getElementById('statPingAvg').textContent = `${Math.round(avgSum / validAvgs.length)} ms`;
-            document.getElementById('statPingFast').textContent = `${fastCount} / ${completedResults.length}`;
-            const totalLoss = completedResults.reduce((a, b) => a + b.loss, 0);
-            document.getElementById('statPingLoss').textContent = `${Math.round(totalLoss / completedResults.length)}%`;
-          }
-        });
-
-        sfx.playSuccess();
-        statusText.textContent = '✅ 全球节点测速完成 (均由客户端网络发起)';
-        setTimeout(() => progressWrap.classList.remove('show'), 1500);
+        }
       };
 
       // Add Custom Ping Target Logic
       const handleAddCustom = async () => {
-        const val = customInput.value;
-        if (!val.trim()) return;
-        sfx.playClick();
+        const val = customInput.value.trim();
+        if (!val) {
+          toast.info('请先在输入框中填入 IP、域名或 URL (例: google.com)');
+          customInput.focus();
+          return;
+        }
+        try { sfx.playClick(); } catch(e) {}
         const newNode = createCustomNode(val);
-        if (!newNode) return;
+        if (!newNode) {
+          toast.error('无效的 IP 或域名格式');
+          return;
+        }
         customNodes.unshift(newNode);
         saveCustomNodes(customNodes);
         customInput.value = '';
-        toast.success(`已添加并保存目标: ${newNode.host}`);
+        toast.success(`已添加并保存测速目标: ${newNode.host}`);
         startPingSuite();
       };
 
@@ -796,38 +892,230 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="btn-tool-action btn-tool-primary" id="btnRunDns">${i18n.t('btn_run_dns')}</button>
       `;
       stageContent.innerHTML = `
-        <div class="split-editor">
-          <div class="editor-pane">
-            <div class="pane-label"><span>TARGET DOMAIN</span></div>
-            <input class="stage-input" id="dnsInput" placeholder="e.g. github.com" value="github.com" />
+        <div class="dns-dash-container">
+          <!-- Controls Bar -->
+          <div class="dns-control-bar">
+            <div class="dns-input-wrap">
+              <input class="stage-input" id="dnsInput" placeholder="输入要查询的域名 (例: github.com / google.com)..." value="github.com" style="margin-bottom:0;" />
+            </div>
+
+            <!-- Record Type Select -->
+            <select id="dnsTypeSelect" class="dns-select">
+              <option value="ALL">ALL (常用全部记录)</option>
+              ${RECORD_TYPES.map(t => `<option value="${t}">${t} 记录</option>`).join('')}
+            </select>
+
+            <!-- Upstream DNS Provider Select -->
+            <select id="dnsProviderSelect" class="dns-select">
+              <!-- Dynamically Populated -->
+            </select>
+            <button class="dns-add-btn" id="btnAddCustomDnsBtn" title="添加自定义 DoH 服务器">➕ 自定义</button>
           </div>
-          <div class="editor-pane">
-            <div class="pane-label"><span>DNS RECORDS (A, AAAA, MX, TXT)</span></div>
-            <div class="stage-output-box" id="dnsOutput"></div>
+
+          <!-- Summary Stats -->
+          <div class="dns-stats-row">
+            <div class="dns-stat-card">
+              <div class="dns-stat-label">总解析记录数 (TOTAL)</div>
+              <div class="dns-stat-val" id="statDnsTotal" style="color:var(--aurora-cyan);">—</div>
+            </div>
+            <div class="dns-stat-card">
+              <div class="dns-stat-label">IPv4 / IPv6 地址</div>
+              <div class="dns-stat-val" id="statDnsIp" style="color:var(--aurora-emerald);">—</div>
+            </div>
+            <div class="dns-stat-card">
+              <div class="dns-stat-label">邮件服务器 (MX)</div>
+              <div class="dns-stat-val" id="statDnsMx" style="color:var(--aurora-purple);">—</div>
+            </div>
+            <div class="dns-stat-card">
+              <div class="dns-stat-label">权威响应状态</div>
+              <div class="dns-stat-val" id="statDnsStatus" style="color:var(--aurora-amber);">—</div>
+            </div>
           </div>
+
+          <!-- Records Cards Container -->
+          <div class="dns-records-grid" id="dnsRecordsGrid"></div>
         </div>
       `;
 
       const input = document.getElementById('dnsInput');
-      const output = document.getElementById('dnsOutput');
+      const typeSelect = document.getElementById('dnsTypeSelect');
+      const providerSelect = document.getElementById('dnsProviderSelect');
+      const addCustomDnsBtn = document.getElementById('btnAddCustomDnsBtn');
+      const gridContainer = document.getElementById('dnsRecordsGrid');
 
-      const executeDns = async () => {
-        const dom = input.value.trim();
-        if (!dom) return;
-        sfx.playClick();
-        output.textContent = `Resolving DNS records for ${dom}...`;
-        const res = await queryDnsRecords(dom);
-        sfx.playSuccess();
-        output.textContent = JSON.stringify(res, null, 2);
+      let customDnsList = getCustomDnsServers();
+
+      const populateProviderSelect = () => {
+        const all = [...BUILTIN_DNS_SERVERS, ...customDnsList];
+        providerSelect.innerHTML = all.map(s => `
+          <option value="${s.id}">${s.flag} ${s.name}${s.isCustom ? ' [自定义]' : ''}</option>
+        `).join('');
       };
+
+      populateProviderSelect();
+
+      let isDnsRunning = false;
+
+      async function executeDns() {
+        const dom = input.value.trim();
+        if (!dom || isDnsRunning) return;
+        isDnsRunning = true;
+
+        const btnRunDns = document.getElementById('btnRunDns');
+        if (btnRunDns) {
+          btnRunDns.disabled = true;
+          btnRunDns.classList.add('btn-loading');
+          btnRunDns.innerHTML = `<span class="btn-spinner"></span> 查询中...`;
+        }
+
+        try {
+          try { sfx.playClick(); } catch(e) {}
+          
+          const selectedText = providerSelect.selectedOptions[0]?.text || 'DNS';
+          gridContainer.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);font-family:var(--font-mono);">正在通过 ${selectedText} 全量解析 DNS 记录...</div>`;
+
+          const res = await queryAllDnsRecords(dom, typeSelect.value, providerSelect.value);
+          try { sfx.playSuccess(); } catch(e) {}
+
+          // Update Stats
+          const elTotal = document.getElementById('statDnsTotal');
+          const elIp = document.getElementById('statDnsIp');
+          const elMx = document.getElementById('statDnsMx');
+          const elStatus = document.getElementById('statDnsStatus');
+
+          if (elTotal) elTotal.textContent = res.totalRecords;
+          const ipCount = (res.grouped['A']?.length || 0) + (res.grouped['AAAA']?.length || 0);
+          if (elIp) elIp.textContent = `${ipCount} 个`;
+          if (elMx) elMx.textContent = `${res.grouped['MX']?.length || 0} 个`;
+          if (elStatus) elStatus.textContent = 'NOERROR';
+
+          if (res.totalRecords === 0) {
+            gridContainer.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);font-family:var(--font-mono);">未查询到任何有效的 ${typeSelect.value} DNS 解析记录</div>`;
+            return;
+          }
+
+          // Render Categorized Cards
+          gridContainer.innerHTML = Object.entries(res.grouped)
+            .filter(([_, records]) => records && records.length > 0)
+            .map(([type, records]) => `
+              <div class="dns-type-card">
+                <div class="dns-type-header">
+                  <div class="dns-type-title">
+                    <span>📌 ${type} 记录</span>
+                    <span class="dns-type-badge">${records.length} 条</span>
+                  </div>
+                </div>
+                <table class="dns-record-table">
+                  <thead>
+                    <tr>
+                      <th style="width:180px;">主机名称 (NAME)</th>
+                      <th style="width:90px;">TTL (秒)</th>
+                      <th>记录值 / 响应数据 (VALUE / CONTENT)</th>
+                      <th style="width:60px;text-align:right;">复制</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${records.map(r => `
+                      <tr>
+                        <td style="color:var(--aurora-cyan);">${r.name}</td>
+                        <td style="color:var(--text-dim);">${r.ttl}s</td>
+                        <td style="font-family:var(--font-mono);">${r.data}</td>
+                        <td style="text-align:right;">
+                          <button class="dns-copy-btn" data-val="${r.data}" title="复制记录值">📋</button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `).join('');
+
+          // Bind Copy buttons
+          gridContainer.querySelectorAll('.dns-copy-btn').forEach(btn => {
+            btn.onclick = () => {
+              navigator.clipboard.writeText(btn.dataset.val);
+              try { sfx.playSuccess(); } catch(e) {}
+              toast.success('DNS 记录已复制');
+            };
+          });
+        } finally {
+          isDnsRunning = false;
+          if (btnRunDns) {
+            btnRunDns.disabled = false;
+            btnRunDns.classList.remove('btn-loading');
+            btnRunDns.innerHTML = i18n.t('btn_run_dns');
+          }
+        }
+      }
+
+      const triggerAddCustomDns = () => {
+        try { sfx.playClick(); } catch(e) {}
+        openDnsModal((dohUrl, serverName) => {
+          const newServer = createCustomDnsServer(serverName || dohUrl, dohUrl);
+          customDnsList.push(newServer);
+          saveCustomDnsServers(customDnsList);
+          populateProviderSelect();
+          providerSelect.value = newServer.id;
+          toast.success(`已保存自定义 DNS: ${newServer.name}`);
+          executeDns();
+        });
+      };
+
+      providerSelect.onchange = executeDns;
+      typeSelect.onchange = executeDns;
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') executeDns();
+      };
+
+      if (addCustomDnsBtn) {
+        addCustomDnsBtn.onclick = triggerAddCustomDns;
+      }
 
       document.getElementById('btnRunDns').onclick = executeDns;
       document.getElementById('btnDnsSample').onclick = () => {
         input.value = SAMPLES.domain;
         executeDns();
       };
+
       executeDns();
     }
+  }
+
+  // ====== Custom Integrated Glass Modal Manager ======
+  const modalOverlay = document.getElementById('customModalOverlay');
+  const modalClose = document.getElementById('modalClose');
+  const modalCancel = document.getElementById('modalCancel');
+  const modalConfirm = document.getElementById('modalConfirm');
+  const modalDohUrl = document.getElementById('modalDohUrl');
+  const modalDohName = document.getElementById('modalDohName');
+
+  function openDnsModal(onConfirmCallback) {
+    if (!modalOverlay) return;
+    if (modalDohUrl) modalDohUrl.value = '';
+    if (modalDohName) modalDohName.value = '';
+    modalOverlay.classList.add('open');
+    setTimeout(() => modalDohUrl?.focus(), 50);
+
+    modalConfirm.onclick = () => {
+      const dohUrl = modalDohUrl ? modalDohUrl.value.trim() : '';
+      const serverName = modalDohName ? modalDohName.value.trim() : '';
+      if (!dohUrl) {
+        toast.info('请先输入有效的 DoH 服务器 URL (例: https://doh.dns.sb/dns-query)');
+        if (modalDohUrl) modalDohUrl.focus();
+        return;
+      }
+      if (onConfirmCallback) onConfirmCallback(dohUrl, serverName);
+      modalOverlay.classList.remove('open');
+    };
+  }
+
+  const closeModal = () => modalOverlay && modalOverlay.classList.remove('open');
+  if (modalClose) modalClose.onclick = closeModal;
+  if (modalCancel) modalCancel.onclick = closeModal;
+  if (modalOverlay) {
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
   }
 
   // Initial load: Default to IP Lookup Homepage
